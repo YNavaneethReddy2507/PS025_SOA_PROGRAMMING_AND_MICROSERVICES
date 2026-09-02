@@ -46,6 +46,17 @@ A production-ready, high-concurrency distributed microservices platform for real
 
 ---
 
+## 📋 Implementation Status & Phase Roadmap
+
+| Phase | Milestone / Area | Status | Deliverables & Progress |
+| :--- | :--- | :---: | :--- |
+| **Phase 1** | **System Architecture & Multi-Module Setup** | ✅ **COMPLETED** | - Root Maven reactor POM managing 6 submodules with Spring Boot 3.3.5 & Spring Cloud 2023.0.3.<br>- Domain models, entities, DTOs, exception handlers, and repository layers for all services.<br>- JWT security utilities, BCrypt password hashing, and API Gateway route filters.<br>- Docker Compose multi-container configuration and MySQL initialization script (`init-mysql.sql`). |
+| **Phase 2** | **Eureka Service Discovery** | ✅ **COMPLETED** | - Standalone Eureka Server running on port `8761` with self-preservation tuning.<br>- Eureka Discovery Clients configured across all 5 services with `prefer-ip-address: true`.<br>- Dynamic service lookup via Spring Cloud LoadBalancer (`lb://<service>`) & OpenFeign (`@FeignClient`).<br>- Zero hardcoded IP addresses across the entire codebase.<br>- Dynamic service registration integration tests (`EurekaServiceRegistrationTest`) & 42/42 tests passing. |
+| **Phase 3** | **Gateway Routing, Rate Limiting & Filter Pipeline** | 🔄 **READY** | - Route predicates, request transformation, global CORS, and distributed rate limiting. |
+| **Phase 4** | **Distributed Real-Time Engine & Resilience** | ⏳ **PLANNED** | - Concurrency stress testing, Circuit Breakers (Resilience4j), and transaction rollbacks. |
+
+---
+
 ## 🚀 Services Overview
 
 | Microservice | Port | Database Schema | Key Responsibilities |
@@ -78,17 +89,48 @@ A production-ready, high-concurrency distributed microservices platform for real
 
 ## 🧪 Test Suite & Verification Results
 
-All 40 unit and integration tests execute cleanly with **0 failures and 0 errors**:
+All 42 unit and integration tests execute cleanly with **0 failures and 0 errors**:
 
 | Module | Test Classes | Tests Run | Result |
 |---|---|---|---|
-| **eureka-server** | `EurekaServerApplicationTests` | 1 | **PASSED** |
+| **eureka-server** | `EurekaServerApplicationTests`, `EurekaServiceRegistrationTest` | 3 | **PASSED** |
 | **api-gateway** | `ApiGatewayApplicationTests` | 2 | **PASSED** |
 | **auth-service** | `AuthServiceApplicationTests`, `AuthControllerTest`, `AuthServiceImplTest` | 10 | **PASSED** |
 | **auction-service** | `AuctionServiceApplicationTests`, `AuctionControllerTest`, `AuctionServiceImplTest` | 10 | **PASSED** |
 | **bidding-service** | `BiddingServiceApplicationTests`, `BiddingControllerTest`, `BiddingServiceImplTest` | 9 | **PASSED** |
 | **payment-service** | `PaymentServiceApplicationTests`, `PaymentControllerTest`, `PaymentServiceImplTest` | 8 | **PASSED** |
-| **Total** | | **40** | **100% SUCCESS** |
+| **Total** | | **42** | **100% SUCCESS** |
+
+---
+
+## 🧭 Service Discovery & Startup Order (Phase 2)
+
+All microservices register dynamically as Eureka discovery clients with **zero hardcoded service IPs**.
+
+### Registered Services in Eureka
+
+| Service | Port | Eureka Service ID | Discovery Mechanism |
+|---|---|---|---|
+| **Eureka Server** | `8761` | `EUREKA-SERVER` | Central Service Registry & Peer Awareness |
+| **API Gateway** | `8080` | `API-GATEWAY` | Dynamic Route Resolution (`lb://<service>`) |
+| **Auth Service** | `8081` | `AUTH-SERVICE` | Eureka Client (`@EnableDiscoveryClient`) |
+| **Auction Service** | `8082` | `AUCTION-SERVICE` | OpenFeign dynamic lookup to `bidding-service` & `payment-service` |
+| **Bidding Service** | `8083` | `BIDDING-SERVICE` | OpenFeign dynamic lookup to `auction-service` |
+| **Payment Service** | `8084` | `PAYMENT-SERVICE` | Eureka Client (`@EnableDiscoveryClient`) |
+
+### Recommended Startup Order
+
+To guarantee clean service registration and avoid cold-lookup retries:
+
+1. **MySQL Database (`3306`)**: Start MySQL server and run `init-mysql.sql` to initialize schemas (`auth_db`, `auction_db`, `bidding_db`, `payment_db`).
+2. **Eureka Server (`8761`)**: Start `eureka-server` and verify dashboard at `http://localhost:8761`.
+3. **Domain Services**:
+   - `auth-service` (`8081`)
+   - `payment-service` (`8084`)
+4. **Core Auction & Bidding Engine**:
+   - `auction-service` (`8082`)
+   - `bidding-service` (`8083`)
+5. **API Gateway (`8080`)**: Start `api-gateway` to pull full Eureka registry cache and begin routing incoming HTTP traffic.
 
 ---
 
