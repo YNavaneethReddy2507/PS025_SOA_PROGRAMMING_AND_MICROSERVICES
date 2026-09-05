@@ -52,8 +52,9 @@ A production-ready, high-concurrency distributed microservices platform for real
 | :--- | :--- | :---: | :--- |
 | **Phase 1** | **System Architecture & Multi-Module Setup** | ✅ **COMPLETED** | - Root Maven reactor POM managing 6 submodules with Spring Boot 3.3.5 & Spring Cloud 2023.0.3.<br>- Domain models, entities, DTOs, exception handlers, and repository layers for all services.<br>- JWT security utilities, BCrypt password hashing, and API Gateway route filters.<br>- Docker Compose multi-container configuration and MySQL initialization script (`init-mysql.sql`). |
 | **Phase 2** | **Eureka Service Discovery** | ✅ **COMPLETED** | - Standalone Eureka Server running on port `8761` with self-preservation tuning.<br>- Eureka Discovery Clients configured across all 5 services with `prefer-ip-address: true`.<br>- Dynamic service lookup via Spring Cloud LoadBalancer (`lb://<service>`) & OpenFeign (`@FeignClient`).<br>- Zero hardcoded IP addresses across the entire codebase.<br>- Dynamic service registration integration tests (`EurekaServiceRegistrationTest`) & 42/42 tests passing. |
-| **Phase 3** | **Gateway Routing, Rate Limiting & Filter Pipeline** | 🔄 **READY** | - Route predicates, request transformation, global CORS, and distributed rate limiting. |
-| **Phase 4** | **Distributed Real-Time Engine & Resilience** | ⏳ **PLANNED** | - Concurrency stress testing, Circuit Breakers (Resilience4j), and transaction rollbacks. |
+| **Phase 3** | **Authentication & JWT Security** | ✅ **COMPLETED** | - Auth Service with BCrypt password hashing, dual-identifier login (username/email), JWT creation & claims validation.<br>- Reusable JWT security configuration, custom authentication entry point & access denied handler.<br>- Zero token logging, configurable expiration & secrets, comprehensive exception handling.<br>- 34/34 tests passing in auth-service; 66/66 tests passing across all reactor modules.<br>- Exported Postman collection (`PS025_Phase3_Auth_Postman_Collection.json`) for full API verification. |
+| **Phase 4** | **Gateway Routing, Rate Limiting & Filter Pipeline** | 🔄 **READY** | - Route predicates, request transformation, global CORS, and distributed rate limiting. |
+| **Phase 5** | **Distributed Real-Time Engine & Resilience** | ⏳ **PLANNED** | - Concurrency stress testing, Circuit Breakers (Resilience4j), and transaction rollbacks. |
 
 ---
 
@@ -84,22 +85,23 @@ A production-ready, high-concurrency distributed microservices platform for real
 7. **Clean DTO Boundaries & Exception Handling**: Controllers strictly consume and return DTOs (no JPA entities exposed); errors handled uniformly via `@RestControllerAdvice`.
 8. **Pure Java Portability**: Pure POJO builder pattern, explicit constructor injection, and SLF4J logging for clean, warning-free compilation across Java 17 through Java 25+.
 9. **Environment Variable Configuration**: Secrets and database credentials configured via environment variables with safe development defaults.
+10. **Zero Token Logging & BCrypt Hashing**: Raw JWT tokens are strictly excluded from logs; passwords are salted and hashed via BCrypt before storage.
 
 ---
 
 ## 🧪 Test Suite & Verification Results
 
-All 42 unit and integration tests execute cleanly with **0 failures and 0 errors**:
+All 66 unit and integration tests execute cleanly with **0 failures and 0 errors**:
 
 | Module | Test Classes | Tests Run | Result |
 |---|---|---|---|
 | **eureka-server** | `EurekaServerApplicationTests`, `EurekaServiceRegistrationTest` | 3 | **PASSED** |
 | **api-gateway** | `ApiGatewayApplicationTests` | 2 | **PASSED** |
-| **auth-service** | `AuthServiceApplicationTests`, `AuthControllerTest`, `AuthServiceImplTest` | 10 | **PASSED** |
+| **auth-service** | `AuthServiceApplicationTests`, `AuthControllerTest`, `JwtSecurityTest`, `AuthServiceImplTest` | 34 | **PASSED** |
 | **auction-service** | `AuctionServiceApplicationTests`, `AuctionControllerTest`, `AuctionServiceImplTest` | 10 | **PASSED** |
 | **bidding-service** | `BiddingServiceApplicationTests`, `BiddingControllerTest`, `BiddingServiceImplTest` | 9 | **PASSED** |
 | **payment-service** | `PaymentServiceApplicationTests`, `PaymentControllerTest`, `PaymentServiceImplTest` | 8 | **PASSED** |
-| **Total** | | **42** | **100% SUCCESS** |
+| **Total** | | **66** | **100% SUCCESS** |
 
 ---
 

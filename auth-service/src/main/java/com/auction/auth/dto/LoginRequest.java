@@ -1,13 +1,12 @@
 package com.auction.auth.dto;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
 public class LoginRequest {
 
-    @NotBlank(message = "Email cannot be blank")
-    @Email(message = "Email must be valid")
     private String email;
+    private String username;
+    private String usernameOrEmail;
 
     @NotBlank(message = "Password cannot be blank")
     private String password;
@@ -17,6 +16,19 @@ public class LoginRequest {
 
     public LoginRequest(String email, String password) {
         this.email = email;
+        this.password = password;
+    }
+
+    public LoginRequest(String username, String email, String password) {
+        this.username = username;
+        this.email = email;
+        this.password = password;
+    }
+
+    public LoginRequest(String username, String email, String usernameOrEmail, String password) {
+        this.username = username;
+        this.email = email;
+        this.usernameOrEmail = usernameOrEmail;
         this.password = password;
     }
 
@@ -32,6 +44,22 @@ public class LoginRequest {
         this.email = email;
     }
 
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getUsernameOrEmail() {
+        return usernameOrEmail;
+    }
+
+    public void setUsernameOrEmail(String usernameOrEmail) {
+        this.usernameOrEmail = usernameOrEmail;
+    }
+
     public String getPassword() {
         return password;
     }
@@ -40,8 +68,23 @@ public class LoginRequest {
         this.password = password;
     }
 
+    public String getIdentifier() {
+        if (usernameOrEmail != null && !usernameOrEmail.trim().isEmpty()) {
+            return usernameOrEmail.trim();
+        }
+        if (email != null && !email.trim().isEmpty()) {
+            return email.trim();
+        }
+        if (username != null && !username.trim().isEmpty()) {
+            return username.trim();
+        }
+        return null;
+    }
+
     public static class LoginRequestBuilder {
         private String email;
+        private String username;
+        private String usernameOrEmail;
         private String password;
 
         LoginRequestBuilder() {
@@ -52,13 +95,23 @@ public class LoginRequest {
             return this;
         }
 
+        public LoginRequestBuilder username(String username) {
+            this.username = username;
+            return this;
+        }
+
+        public LoginRequestBuilder usernameOrEmail(String usernameOrEmail) {
+            this.usernameOrEmail = usernameOrEmail;
+            return this;
+        }
+
         public LoginRequestBuilder password(String password) {
             this.password = password;
             return this;
         }
 
         public LoginRequest build() {
-            return new LoginRequest(email, password);
+            return new LoginRequest(username, email, usernameOrEmail, password);
         }
     }
 }

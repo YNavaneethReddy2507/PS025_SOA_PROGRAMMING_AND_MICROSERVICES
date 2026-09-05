@@ -34,21 +34,24 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        log.info("Processing user registration for email: {}", request.getEmail());
+        log.info("Processing user registration for username: {}", request.getUsername());
 
-        if (userRepository.existsByEmail(request.getEmail())) {
-            log.warn("Registration failed: Email {} already in use", request.getEmail());
-            throw new UserAlreadyExistsException("Email is already registered: " + request.getEmail());
+        String email = request.getEmail().trim().toLowerCase();
+        String username = request.getUsername().trim();
+
+        if (userRepository.existsByEmail(email)) {
+            log.warn("Registration failed: Email is already registered");
+            throw new UserAlreadyExistsException("Email is already registered: " + email);
         }
 
-        if (userRepository.existsByUsername(request.getUsername())) {
-            log.warn("Registration failed: Username {} already in use", request.getUsername());
-            throw new UserAlreadyExistsException("Username is already taken: " + request.getUsername());
+        if (userRepository.existsByUsername(username)) {
+            log.warn("Registration failed: Username is already taken");
+            throw new UserAlreadyExistsException("Username is already taken: " + username);
         }
 
         User user = User.builder()
-                .username(request.getUsername().trim())
-                .email(request.getEmail().trim().toLowerCase())
+                .username(username)
+                .email(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(request.getRole() != null ? request.getRole() : Role.BUYER)
                 .build();
@@ -77,17 +80,25 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
-        log.info("Processing user login attempt for email: {}", request.getEmail());
+        String identifier = request.getIdentifier();
+        if (identifier == null || identifier.trim().isEmpty()) {
+            log.warn("Login failed: Identifier is missing");
+            throw new InvalidCredentialsException("Username or email must be provided");
+        }
 
-        User user = userRepository.findByEmail(request.getEmail().trim().toLowerCase())
+        String cleanIdentifier = identifier.trim();
+        log.info("Processing user login attempt");
+
+        User user = userRepository.findByEmail(cleanIdentifier.toLowerCase())
+                .or(() -> userRepository.findByUsername(cleanIdentifier))
                 .orElseThrow(() -> {
-                    log.warn("Login failed: User not found with email {}", request.getEmail());
-                    return new InvalidCredentialsException("Invalid email or password");
+                    log.warn("Login failed: User not found");
+                    return new InvalidCredentialsException("Invalid username/email or password");
                 });
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            log.warn("Login failed: Password mismatch for email {}", request.getEmail());
-            throw new InvalidCredentialsException("Invalid email or password");
+            log.warn("Login failed: Password mismatch for user ID: {}", user.getId());
+            throw new InvalidCredentialsException("Invalid username/email or password");
         }
 
         String token = jwtTokenProvider.generateToken(
@@ -119,7 +130,7 @@ public class AuthServiceImpl implements AuthService {
         if (token == null || !jwtTokenProvider.validateToken(token)) {
             return ValidateTokenResponse.builder()
                     .valid(false)
-                    .message("Token is invalid or expired")
+                    .message("Token is invalid, expired, or missing")
                     .build();
         }
 
