@@ -24,13 +24,13 @@ spring:
         - id: bidding-service
           uri: lb://bidding-service
           predicates:
-            - Path=/api/v1/bids/**
+            - Path=/api/bids/**, /api/v1/bids/**
           filters:
             - name: AuthenticationFilter
         - id: payment-service
           uri: lb://payment-service
           predicates:
-            - Path=/api/v1/payments/**
+            - Path=/api/payments/**, /api/v1/payments/**
           filters:
             - name: AuthenticationFilter
       globalcors:

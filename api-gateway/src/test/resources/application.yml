@@ -1,7 +1,51 @@
+server:
+  port: 8080
+
 spring:
+  application:
+    name: api-gateway
   cloud:
     discovery:
       enabled: false
+    gateway:
+      discovery:
+        locator:
+          enabled: false
+          lower-case-service-id: true
+      routes:
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**, /api/v1/auth/**, /api/users/**, /api/v1/users/**
+        - id: auction-service
+          uri: lb://auction-service
+          predicates:
+            - Path=/api/auctions/**, /api/v1/auctions/**
+          filters:
+            - name: AuthenticationFilter
+        - id: bidding-service
+          uri: lb://bidding-service
+          predicates:
+            - Path=/api/bids/**, /api/v1/bids/**
+          filters:
+            - name: AuthenticationFilter
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/payments/**, /api/v1/payments/**
+          filters:
+            - name: AuthenticationFilter
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
 
 eureka:
   client:
