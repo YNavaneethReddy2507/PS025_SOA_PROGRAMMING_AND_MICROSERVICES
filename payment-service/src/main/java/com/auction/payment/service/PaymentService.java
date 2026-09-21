@@ -7,4 +7,7 @@ public interface PaymentService {
     WalletResponse getWalletByUserId(Long userId);
     PaymentSettlementResponse settleAuctionPayment(PaymentSettlementRequest request);
     TransactionResponse getTransactionById(String transactionId);
+    PaymentResponse processWinnerPayment(PaymentRequest request, Long authenticatedUserId);
+    PaymentResponse getPaymentById(Long id);
+    PaymentResponse getPaymentByAuctionId(Long auctionId);
 }

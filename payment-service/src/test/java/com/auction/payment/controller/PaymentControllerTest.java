@@ -112,4 +112,76 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.transactionId").value("tx-123"))
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
     }
+
+    @Test
+    void testProcessWinnerPaymentEndpoint() throws Exception {
+        com.auction.payment.dto.PaymentRequest request = com.auction.payment.dto.PaymentRequest.builder()
+                .auctionId(1L)
+                .winnerId(10L)
+                .amount(new BigDecimal("500.00"))
+                .paymentMethod("CREDIT_CARD")
+                .build();
+
+        com.auction.payment.dto.PaymentResponse response = com.auction.payment.dto.PaymentResponse.builder()
+                .id(100L)
+                .auctionId(1L)
+                .winnerId(10L)
+                .amount(new BigDecimal("500.00"))
+                .status(com.auction.payment.entity.PaymentStatus.SUCCESS)
+                .transactionReference("PAY-REF-123")
+                .paidAt(LocalDateTime.now())
+                .build();
+
+        when(paymentService.processWinnerPayment(any(com.auction.payment.dto.PaymentRequest.class), eq(10L)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/payments")
+                        .header("X-User-Id", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(100L))
+                .andExpect(jsonPath("$.transactionReference").value("PAY-REF-123"))
+                .andExpect(jsonPath("$.status").value("SUCCESS"));
+    }
+
+    @Test
+    void testGetPaymentByIdEndpoint() throws Exception {
+        com.auction.payment.dto.PaymentResponse response = com.auction.payment.dto.PaymentResponse.builder()
+                .id(100L)
+                .auctionId(1L)
+                .winnerId(10L)
+                .amount(new BigDecimal("500.00"))
+                .status(com.auction.payment.entity.PaymentStatus.SUCCESS)
+                .transactionReference("PAY-REF-123")
+                .paidAt(LocalDateTime.now())
+                .build();
+
+        when(paymentService.getPaymentById(100L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/payments/100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(100L))
+                .andExpect(jsonPath("$.transactionReference").value("PAY-REF-123"));
+    }
+
+    @Test
+    void testGetPaymentByAuctionIdEndpoint() throws Exception {
+        com.auction.payment.dto.PaymentResponse response = com.auction.payment.dto.PaymentResponse.builder()
+                .id(100L)
+                .auctionId(1L)
+                .winnerId(10L)
+                .amount(new BigDecimal("500.00"))
+                .status(com.auction.payment.entity.PaymentStatus.SUCCESS)
+                .transactionReference("PAY-REF-123")
+                .paidAt(LocalDateTime.now())
+                .build();
+
+        when(paymentService.getPaymentByAuctionId(1L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/payments/auction/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.auctionId").value(1L))
+                .andExpect(jsonPath("$.transactionReference").value("PAY-REF-123"));
+    }
 }
