@@ -11,9 +11,11 @@ import com.auction.bidding.repository.BidRepository;
 import com.auction.bidding.service.BiddingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -30,18 +32,29 @@ public class BiddingServiceImpl implements BiddingService {
     private final BidRepository bidRepository;
     private final AuctionBidStateRepository stateRepository;
     private final AuctionClient auctionClient;
+    private final TransactionTemplate transactionTemplate;
 
     // Per-auction mutex lock to serialize simultaneous concurrent bids
     private final ConcurrentHashMap<Long, ReentrantLock> auctionLocks = new ConcurrentHashMap<>();
 
-    public BiddingServiceImpl(BidRepository bidRepository, AuctionBidStateRepository stateRepository, AuctionClient auctionClient) {
+    @Autowired
+    public BiddingServiceImpl(
+            BidRepository bidRepository,
+            AuctionBidStateRepository stateRepository,
+            AuctionClient auctionClient,
+            @Autowired(required = false) PlatformTransactionManager transactionManager
+    ) {
         this.bidRepository = bidRepository;
         this.stateRepository = stateRepository;
         this.auctionClient = auctionClient;
+        this.transactionTemplate = transactionManager != null ? new TransactionTemplate(transactionManager) : null;
+    }
+
+    public BiddingServiceImpl(BidRepository bidRepository, AuctionBidStateRepository stateRepository, AuctionClient auctionClient) {
+        this(bidRepository, stateRepository, auctionClient, null);
     }
 
     @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public BidResponse placeBid(PlaceBidRequest request, Long bidderId) {
         Long auctionId = request.getAuctionId();
         BigDecimal bidAmount = request.getAmount();
@@ -59,6 +72,17 @@ public class BiddingServiceImpl implements BiddingService {
         ReentrantLock lock = auctionLocks.computeIfAbsent(auctionId, k -> new ReentrantLock(true));
         lock.lock();
         try {
+            if (transactionTemplate != null) {
+                return transactionTemplate.execute(status -> processBidPlacement(request, bidderId, bidAmount, bidTime, auctionId));
+            } else {
+                return processBidPlacement(request, bidderId, bidAmount, bidTime, auctionId);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private BidResponse processBidPlacement(PlaceBidRequest request, Long bidderId, BigDecimal bidAmount, LocalDateTime bidTime, Long auctionId) {
             // 1. Fetch live auction metadata from Auction Service
             AuctionDto auctionDto = auctionClient.getAuctionById(auctionId);
             if (auctionDto == null) {
@@ -73,7 +97,7 @@ public class BiddingServiceImpl implements BiddingService {
             }
 
             // 3. Validate current time is before endTime
-            if (auctionDto.getEndTime() != null && LocalDateTime.now().isAfter(auctionDto.getEndTime())) {
+            if (auctionDto.getEndTime() != null && !bidTime.isBefore(auctionDto.getEndTime())) {
                 log.warn("Bid rejected: Auction {} bidding period has expired (endTime={})", auctionId, auctionDto.getEndTime());
                 throw new AuctionNotActiveException("Auction bidding period has expired");
             }
@@ -138,9 +162,6 @@ public class BiddingServiceImpl implements BiddingService {
             log.info("Bid successfully accepted and persisted: bidId={}, auctionId={}, amount={}", savedBid.getId(), auctionId, bidAmount);
 
             return mapToResponse(savedBid, "Bid accepted successfully", true);
-        } finally {
-            lock.unlock();
-        }
     }
 
     @Override

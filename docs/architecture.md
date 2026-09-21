@@ -444,19 +444,141 @@ When a service is scaled horizontally to $N$ instances (e.g., 3 instances of `bi
 
 ---
 
-## 10. Independent Deployability & Multi-Container Setup
+## 11. Real-Time Bidding Service Architecture
 
-To ensure zero coupling and autonomous DevOps lifecycle for each service:
-1. **Isolated Build Units**: Every service possesses an independent `pom.xml` and can be built, packaged (`mvn clean package`), and tested (`mvn test`) independently of peer modules.
-2. **Containerized Deployment**: Each service is bundled with an optimized multi-stage Docker container specification.
-3. **Infrastructure Compose**: The entire distributed system is orchestratable via `docker-compose.yml`:
-   - MySQL service (`3306`) with healthcheck
-   - `eureka-server` (`8761`)
-   - `api-gateway` (`8080`)
-   - `auth-service` (`8081`)
-   - `auction-service` (`8082`)
-   - `bidding-service` (`8083`)
-   - `payment-service` (`8084`)
+### 11.1 Domain Model & Entity Boundaries
+The Bidding Service isolates all bidding concerns within the `bidding_db` schema:
+- **`Bid`**: Entity recording bid placement attempts with fields: `id`, `auctionId`, `bidderId`, `amount`, `status` (`ACCEPTED`, `REJECTED`), `acceptedAt`, and `createdAt`.
+- **`AuctionBidState`**: High-concurrency aggregate root tracking live auction bidding metrics: `auctionId`, `currentHighestBid`, `winningBidderId`, `minBidIncrement`, `reservePrice`, `sellerId`, `totalBidsCount`, and `@Version Long version`.
+
+### 11.2 10-Point Bid Validation Pipeline
+Every bid placement (`POST /api/bids`) is subject to an atomic 10-point validation pipeline:
+1. **JWT Authentication**: Valid Bearer token required in the `Authorization` header.
+2. **Untrusted Client Identity**: Client-supplied `bidderId` is ignored; identity is extracted authoritatively from JWT claims (`X-User-Id`).
+3. **Auction Existence**: Auction metadata fetched and verified via `AuctionClient`.
+4. **Auction Status**: Auction must be in `ACTIVE` state.
+5. **Auction Time Horizon**: Current wall-clock instant must be strictly before `endTime` (`!bidTime.isBefore(endTime)`).
+6. **Seller Self-Bidding Prohibition**: Bidders cannot place bids on auctions where `sellerId == bidderId`.
+7. **Current Highest Bid Superiority**: Amount must strictly exceed the current highest bid.
+8. **Minimum Increment Requirement**: Amount must satisfy `amount >= currentHighestBid + minBidIncrement` (or `>= startingPrice` for the opening bid).
+9. **Sub-Threshold Rejection**: Non-conforming bids are rejected with `SubThresholdBidException`.
+10. **Persistence & Synchronization**: Accepted bids are persisted to `bids` and synchronized to `auction_bid_states` and `AuctionService`.
 
 ---
-*End of Phase 2 Architecture Specification.*
+
+## 12. High-Concurrency Bidding & Fair Auction Clearance Engine
+
+### 12.1 Concurrency Hazards & Protection Matrix
+
+| Concurrency Hazard | Mechanism / Root Cause | Mitigation Strategy in PS025 | Verification Test |
+|---|---|---|---|
+| **Race Conditions** | Multiple threads evaluating `currentHighestBid` simultaneously. | **Per-Auction Striped Fair Mutex (`ReentrantLock(true)`)**: Serializes execution per `auctionId` in FIFO order. | `testTenSimultaneousBids` |
+| **Lost Updates** | Thread B overwriting Thread A's higher bid or counter increment. | **Lock-Enclosed Transactions (`TransactionTemplate`)**: Lock is held through DB commit and flush before next thread enters. | `testTwoSimultaneousBids` |
+| **Duplicate Winning Bids** | Two bidders submitting the same amount at the exact same millisecond. | **Monotonic Threshold Validation**: Inside the critical section, only the first bid is accepted; all subsequent identical bids fail threshold check. | `testSameAmountSubmittedConcurrently` |
+| **Stale Current Price** | Reading cached auction prices during rapid sequential bidding. | **Direct State Querying**: Live `AuctionBidState` is checked and updated within the mutex before lock release. | `testIncreasingBidsConcurrently` |
+| **Simultaneous Bids** | 10+ concurrent requests competing for the same item. | **Fair FIFO Queueing**: Threads queue deterministically; valid bids advance price monotonically. | `testTenSimultaneousBids` |
+| **Simultaneous Bid & Close** | Bid arriving at the exact millisecond an auction is closed. | **Authoritative State Gating**: Status transition to `CLOSED` inside mutex gates and rejects subsequent bids deterministically. | `testSimultaneousBidAndClose` |
+| **Multiple Close Requests** | Redundant or concurrent close calls triggering multiple settlements. | **Idempotent State Checks**: Re-closing returns cached clearance state without re-evaluating or re-triggering payment. | `testRepeatedCloseRequestConcurrently` |
+
+### 12.2 Multi-Tier Locking Strategy & Technical Rationale
+
+```
++-----------------------------------------------------------------------------+
+|                      Incoming Concurrent HTTP Requests                      |
++-----------------------------------------------------------------------------+
+                                       |
+                                       v
++-----------------------------------------------------------------------------+
+| Tier 1: In-Memory Striped Fair Mutex (ConcurrentHashMap<Long, ReentrantLock>) |
+| - Microsecond-level serialization per auctionId                             |
+| - FIFO fairness queueing (new ReentrantLock(true))                           |
+| - Zero database lock contention or thread-level deadlock overhead           |
++-----------------------------------------------------------------------------+
+                                       | (Lock Acquired)
+                                       v
++-----------------------------------------------------------------------------+
+| Tier 2: Transactional Boundary Enclosed by Lock (TransactionTemplate)       |
+| - Database transaction opens AFTER lock acquisition                         |
+| - Complete DB write and commit finishes BEFORE lock release                 |
+| - Completely eliminates dirty / uncommitted reads across concurrent threads  |
++-----------------------------------------------------------------------------+
+                                       | (Across Service Replicas)
+                                       v
++-----------------------------------------------------------------------------+
+| Tier 3: JPA Optimistic Locking (@Version Long version)                      |
+| - Protects Auction and AuctionBidState across distributed container nodes   |
+| - Throws ObjectOptimisticLockingFailureException on concurrent mutation     |
++-----------------------------------------------------------------------------+
+```
+
+#### Why Not Pure Optimistic Locking?
+In high-contention auction closing stages ("sniping"), tens or hundreds of bids arrive in the final seconds. Pure optimistic locking causes $N-1$ transaction rollbacks and retries, creating severe CPU thrashing and poor user experience.
+
+#### Why Not Pure Pessimistic Locking (`SELECT FOR UPDATE`)?
+Pure database row locking blocks DB connection pool worker threads, risks deadlocks across joined tables, and exhausts HikariCP connection pools under high loads.
+
+#### Why the Multi-Tier Hybrid Approach?
+The striped in-memory fair mutex eliminates contention *before* reaching the database, allowing sub-millisecond throughput. The database `@Version` column serves as a safety net for multi-replica distributed deployments, providing absolute data integrity with optimal performance.
+
+### 12.3 Authoritative Closing Instant & Edge-Case Handling
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Bidder
+    actor SellerOrScheduler
+    participant Svc as Auction / Bidding Service
+    participant Lock as Per-Auction Mutex Lock
+    participant DB as Database
+
+    Note over Svc, Lock: Authoritative Closing Instant Scenario: Simultaneous Bid & Close
+    SellerOrScheduler->>Svc: closeAuction(auctionId)
+    Bidder->>Svc: placeBid(auctionId, amount)
+
+    alt Close Acquires Lock First
+        Lock-->>SellerOrScheduler: Lock Granted
+        SellerOrScheduler->>DB: Set status = CLOSED, calculateClearance()
+        SellerOrScheduler->>DB: Commit Auction (CLOSED, winnerId, winningPrice)
+        SellerOrScheduler-->>Lock: Unlock
+        Lock-->>Bidder: Lock Granted
+        Bidder->>DB: Check Auction Status
+        Note over Bidder: Auction is CLOSED!
+        Bidder-->>Svc: Reject with AuctionNotActiveException / InvalidAuctionStateException
+    else Bid Acquires Lock First
+        Lock-->>Bidder: Lock Granted
+        Bidder->>DB: Check status (ACTIVE) & time (< endTime)
+        Bidder->>DB: Persist Bid (ACCEPTED), update currentHighestBid
+        Bidder->>DB: Commit Bid & State
+        Bidder-->>Lock: Unlock
+        Lock-->>SellerOrScheduler: Lock Granted
+        SellerOrScheduler->>DB: Set status = CLOSED
+        SellerOrScheduler->>Svc: calculateClearance(auctionId)
+        Note over SellerOrScheduler: Newly accepted bid is selected as winning bid!
+        SellerOrScheduler->>DB: Commit Auction (CLOSED, winner = newly accepted bidder)
+        SellerOrScheduler-->>Lock: Unlock
+    end
+```
+
+### 12.4 Deterministic Winner Selection (Price-Time Priority)
+Clearance calculation implements deterministic tie-breaking based on financial exchange price-time priority:
+$$\text{Priority} = (\text{Amount} \downarrow, \text{AcceptedAt} \uparrow, \text{ID} \uparrow)$$
+
+1. **Price Priority**: The highest accepted bid amount always takes precedence (`amount DESC`).
+2. **Time Priority**: If two bids have identical amounts, the bid placed earlier wins (`acceptedAt ASC`).
+3. **Deterministic Tie-Breaker**: If both amount and timestamp are identical down to the nanosecond, the smaller surrogate primary key wins (`id ASC`).
+
+Query Implementation:
+```sql
+SELECT b FROM Bid b
+WHERE b.auctionId = :auctionId
+  AND b.status = com.auction.bidding.entity.BidStatus.ACCEPTED
+ORDER BY b.amount DESC, b.acceptedAt ASC, b.id ASC
+```
+
+### 12.5 Idempotent Auction Closure & Automated Scheduler
+1. **Idempotent Invariant**: Re-calling `closeAuction` or `closeAndClearAuction` on an already `CLOSED` auction safely returns the existing clearance and winner state without altering database records or triggering duplicate payments.
+2. **Automated Scheduler**: `AuctionScheduler` runs every 30 seconds (`@Scheduled(fixedDelay = 30000)`), executing `auctionRepository.findExpiredAuctions(AuctionStatus.ACTIVE, now)` and safely clearing all expired auctions.
+
+---
+*End of Phase 7 Architecture Specification.*
+

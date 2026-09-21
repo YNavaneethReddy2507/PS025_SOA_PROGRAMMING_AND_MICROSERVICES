@@ -14,17 +14,21 @@ import java.util.Optional;
 @Repository
 public interface BidRepository extends JpaRepository<Bid, Long> {
 
-    @Query("SELECT b FROM Bid b WHERE b.auctionId = :auctionId ORDER BY b.amount DESC, b.acceptedAt ASC, b.id ASC")
+    @Query("SELECT b FROM Bid b WHERE b.auctionId = :auctionId AND b.status = com.auction.bidding.entity.BidStatus.ACCEPTED ORDER BY b.amount DESC, b.acceptedAt ASC, b.id ASC")
     List<Bid> findByAuctionIdOrderByAmountDescAcceptedAtAsc(@Param("auctionId") Long auctionId);
 
     @Query("SELECT b FROM Bid b WHERE b.auctionId = :auctionId ORDER BY b.acceptedAt DESC")
     List<Bid> findByAuctionIdOrderByAcceptedAtDesc(@Param("auctionId") Long auctionId);
 
-    @Query("SELECT b FROM Bid b WHERE b.auctionId = :auctionId AND b.status = :status ORDER BY b.amount DESC, b.acceptedAt ASC")
+    @Query("SELECT b FROM Bid b WHERE b.auctionId = :auctionId AND b.status = :status ORDER BY b.amount DESC, b.acceptedAt ASC, b.id ASC")
     List<Bid> findByAuctionIdAndStatus(@Param("auctionId") Long auctionId, @Param("status") BidStatus status);
 
-    @Query("SELECT b FROM Bid b WHERE b.auctionId = :auctionId AND b.status = 'ACCEPTED' ORDER BY b.amount DESC, b.acceptedAt ASC, b.id ASC LIMIT 1")
-    Optional<Bid> findHighestAcceptedBid(@Param("auctionId") Long auctionId);
+    Optional<Bid> findFirstByAuctionIdAndStatusOrderByAmountDescAcceptedAtAscIdAsc(Long auctionId, BidStatus status);
+
+    default Optional<Bid> findHighestAcceptedBid(Long auctionId) {
+        List<Bid> list = findByAuctionIdOrderByAmountDescAcceptedAtAsc(auctionId);
+        return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
+    }
 
     // Compatibility aliases
     default List<Bid> findByAuctionIdOrderByBidAmountDescBidTimestampAsc(Long auctionId) {
