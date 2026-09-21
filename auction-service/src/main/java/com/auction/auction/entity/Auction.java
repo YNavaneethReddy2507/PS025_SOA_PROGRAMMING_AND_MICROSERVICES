@@ -21,36 +21,36 @@ public class Auction {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(nullable = false, length = 64)
+    @Column(length = 64)
     private String category;
 
     @Column(name = "starting_price", nullable = false, precision = 19, scale = 4)
     private BigDecimal startingPrice;
 
-    @Column(name = "reserve_price", nullable = false, precision = 19, scale = 4)
+    @Column(name = "current_price", nullable = false, precision = 19, scale = 4)
+    private BigDecimal currentPrice;
+
+    @Column(name = "minimum_increment", nullable = false, precision = 19, scale = 4)
+    private BigDecimal minimumIncrement;
+
+    @Column(name = "reserve_price", precision = 19, scale = 4)
     private BigDecimal reservePrice;
-
-    @Column(name = "min_bid_increment", nullable = false, precision = 19, scale = 4)
-    private BigDecimal minBidIncrement;
-
-    @Column(name = "current_highest_bid", precision = 19, scale = 4)
-    private BigDecimal currentHighestBid;
-
-    @Column(name = "winning_bidder_id")
-    private Long winningBidderId;
-
-    @Column(name = "seller_id", nullable = false)
-    private Long sellerId;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private AuctionStatus status;
 
     @Column(name = "start_time", nullable = false)
     private LocalDateTime startTime;
 
     @Column(name = "end_time", nullable = false)
     private LocalDateTime endTime;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private AuctionStatus status;
+
+    @Column(name = "seller_id", nullable = false)
+    private Long sellerId;
+
+    @Column(name = "winner_id")
+    private Long winnerId;
 
     @Version
     private Long version;
@@ -67,22 +67,23 @@ public class Auction {
     }
 
     public Auction(Long id, String title, String description, String category, BigDecimal startingPrice,
-                   BigDecimal reservePrice, BigDecimal minBidIncrement, BigDecimal currentHighestBid,
-                   Long winningBidderId, Long sellerId, AuctionStatus status, LocalDateTime startTime,
-                   LocalDateTime endTime, Long version, LocalDateTime createdAt, LocalDateTime updatedAt) {
+                   BigDecimal currentPrice, BigDecimal minimumIncrement, BigDecimal reservePrice,
+                   LocalDateTime startTime, LocalDateTime endTime, AuctionStatus status,
+                   Long sellerId, Long winnerId, Long version,
+                   LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.title = title;
         this.description = description;
         this.category = category;
         this.startingPrice = startingPrice;
+        this.currentPrice = currentPrice;
+        this.minimumIncrement = minimumIncrement;
         this.reservePrice = reservePrice;
-        this.minBidIncrement = minBidIncrement;
-        this.currentHighestBid = currentHighestBid;
-        this.winningBidderId = winningBidderId;
-        this.sellerId = sellerId;
-        this.status = status;
         this.startTime = startTime;
         this.endTime = endTime;
+        this.status = status;
+        this.sellerId = sellerId;
+        this.winnerId = winnerId;
         this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -132,52 +133,28 @@ public class Auction {
         this.startingPrice = startingPrice;
     }
 
+    public BigDecimal getCurrentPrice() {
+        return currentPrice;
+    }
+
+    public void setCurrentPrice(BigDecimal currentPrice) {
+        this.currentPrice = currentPrice;
+    }
+
+    public BigDecimal getMinimumIncrement() {
+        return minimumIncrement;
+    }
+
+    public void setMinimumIncrement(BigDecimal minimumIncrement) {
+        this.minimumIncrement = minimumIncrement;
+    }
+
     public BigDecimal getReservePrice() {
         return reservePrice;
     }
 
     public void setReservePrice(BigDecimal reservePrice) {
         this.reservePrice = reservePrice;
-    }
-
-    public BigDecimal getMinBidIncrement() {
-        return minBidIncrement;
-    }
-
-    public void setMinBidIncrement(BigDecimal minBidIncrement) {
-        this.minBidIncrement = minBidIncrement;
-    }
-
-    public BigDecimal getCurrentHighestBid() {
-        return currentHighestBid;
-    }
-
-    public void setCurrentHighestBid(BigDecimal currentHighestBid) {
-        this.currentHighestBid = currentHighestBid;
-    }
-
-    public Long getWinningBidderId() {
-        return winningBidderId;
-    }
-
-    public void setWinningBidderId(Long winningBidderId) {
-        this.winningBidderId = winningBidderId;
-    }
-
-    public Long getSellerId() {
-        return sellerId;
-    }
-
-    public void setSellerId(Long sellerId) {
-        this.sellerId = sellerId;
-    }
-
-    public AuctionStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(AuctionStatus status) {
-        this.status = status;
     }
 
     public LocalDateTime getStartTime() {
@@ -194,6 +171,30 @@ public class Auction {
 
     public void setEndTime(LocalDateTime endTime) {
         this.endTime = endTime;
+    }
+
+    public AuctionStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(AuctionStatus status) {
+        this.status = status;
+    }
+
+    public Long getSellerId() {
+        return sellerId;
+    }
+
+    public void setSellerId(Long sellerId) {
+        this.sellerId = sellerId;
+    }
+
+    public Long getWinnerId() {
+        return winnerId;
+    }
+
+    public void setWinnerId(Long winnerId) {
+        this.winnerId = winnerId;
     }
 
     public Long getVersion() {
@@ -220,20 +221,45 @@ public class Auction {
         this.updatedAt = updatedAt;
     }
 
+    // --- Aliases for compatibility ---
+    public BigDecimal getCurrentHighestBid() {
+        return currentPrice;
+    }
+
+    public void setCurrentHighestBid(BigDecimal currentHighestBid) {
+        this.currentPrice = currentHighestBid;
+    }
+
+    public BigDecimal getMinBidIncrement() {
+        return minimumIncrement;
+    }
+
+    public void setMinBidIncrement(BigDecimal minBidIncrement) {
+        this.minimumIncrement = minBidIncrement;
+    }
+
+    public Long getWinningBidderId() {
+        return winnerId;
+    }
+
+    public void setWinningBidderId(Long winningBidderId) {
+        this.winnerId = winningBidderId;
+    }
+
     public static class AuctionBuilder {
         private Long id;
         private String title;
         private String description;
-        private String category;
+        private String category = "GENERAL";
         private BigDecimal startingPrice;
+        private BigDecimal currentPrice;
+        private BigDecimal minimumIncrement;
         private BigDecimal reservePrice;
-        private BigDecimal minBidIncrement;
-        private BigDecimal currentHighestBid;
-        private Long winningBidderId;
-        private Long sellerId;
-        private AuctionStatus status;
         private LocalDateTime startTime;
         private LocalDateTime endTime;
+        private AuctionStatus status;
+        private Long sellerId;
+        private Long winnerId;
         private Long version;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
@@ -266,33 +292,28 @@ public class Auction {
             return this;
         }
 
-        public AuctionBuilder reservePrice(BigDecimal reservePrice) {
-            this.reservePrice = reservePrice;
-            return this;
-        }
-
-        public AuctionBuilder minBidIncrement(BigDecimal minBidIncrement) {
-            this.minBidIncrement = minBidIncrement;
+        public AuctionBuilder currentPrice(BigDecimal currentPrice) {
+            this.currentPrice = currentPrice;
             return this;
         }
 
         public AuctionBuilder currentHighestBid(BigDecimal currentHighestBid) {
-            this.currentHighestBid = currentHighestBid;
+            this.currentPrice = currentHighestBid;
             return this;
         }
 
-        public AuctionBuilder winningBidderId(Long winningBidderId) {
-            this.winningBidderId = winningBidderId;
+        public AuctionBuilder minimumIncrement(BigDecimal minimumIncrement) {
+            this.minimumIncrement = minimumIncrement;
             return this;
         }
 
-        public AuctionBuilder sellerId(Long sellerId) {
-            this.sellerId = sellerId;
+        public AuctionBuilder minBidIncrement(BigDecimal minBidIncrement) {
+            this.minimumIncrement = minBidIncrement;
             return this;
         }
 
-        public AuctionBuilder status(AuctionStatus status) {
-            this.status = status;
+        public AuctionBuilder reservePrice(BigDecimal reservePrice) {
+            this.reservePrice = reservePrice;
             return this;
         }
 
@@ -303,6 +324,26 @@ public class Auction {
 
         public AuctionBuilder endTime(LocalDateTime endTime) {
             this.endTime = endTime;
+            return this;
+        }
+
+        public AuctionBuilder status(AuctionStatus status) {
+            this.status = status;
+            return this;
+        }
+
+        public AuctionBuilder sellerId(Long sellerId) {
+            this.sellerId = sellerId;
+            return this;
+        }
+
+        public AuctionBuilder winnerId(Long winnerId) {
+            this.winnerId = winnerId;
+            return this;
+        }
+
+        public AuctionBuilder winningBidderId(Long winningBidderId) {
+            this.winnerId = winningBidderId;
             return this;
         }
 
@@ -322,8 +363,10 @@ public class Auction {
         }
 
         public Auction build() {
-            return new Auction(id, title, description, category, startingPrice, reservePrice, minBidIncrement,
-                    currentHighestBid, winningBidderId, sellerId, status, startTime, endTime, version, createdAt, updatedAt);
+            BigDecimal initialCurrentPrice = this.currentPrice != null ? this.currentPrice : this.startingPrice;
+            BigDecimal initialReserve = this.reservePrice != null ? this.reservePrice : this.startingPrice;
+            return new Auction(id, title, description, category, startingPrice, initialCurrentPrice,
+                    minimumIncrement, initialReserve, startTime, endTime, status, sellerId, winnerId, version, createdAt, updatedAt);
         }
     }
 }

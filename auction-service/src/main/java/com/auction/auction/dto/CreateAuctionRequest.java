@@ -8,12 +8,11 @@ import java.time.LocalDateTime;
 public class CreateAuctionRequest {
 
     @NotBlank(message = "Title is required")
-    @Size(max = 128, message = "Title must not exceed 128 characters")
+    @Size(min = 3, max = 128, message = "Title must be between 3 and 128 characters")
     private String title;
 
     private String description;
 
-    @NotBlank(message = "Category is required")
     @Size(max = 64, message = "Category must not exceed 64 characters")
     private String category;
 
@@ -21,15 +20,13 @@ public class CreateAuctionRequest {
     @DecimalMin(value = "0.01", message = "Starting price must be greater than 0")
     private BigDecimal startingPrice;
 
-    @NotNull(message = "Reserve price is required")
-    @DecimalMin(value = "0.01", message = "Reserve price must be greater than 0")
     private BigDecimal reservePrice;
 
-    @NotNull(message = "Minimum bid increment is required")
-    @DecimalMin(value = "0.01", message = "Minimum bid increment must be greater than 0")
+    @DecimalMin(value = "0.01", message = "Minimum increment must be greater than 0")
+    private BigDecimal minimumIncrement;
+
     private BigDecimal minBidIncrement;
 
-    @NotNull(message = "Start time is required")
     private LocalDateTime startTime;
 
     @NotNull(message = "End time is required")
@@ -39,13 +36,14 @@ public class CreateAuctionRequest {
     }
 
     public CreateAuctionRequest(String title, String description, String category, BigDecimal startingPrice,
-                                BigDecimal reservePrice, BigDecimal minBidIncrement, LocalDateTime startTime, LocalDateTime endTime) {
+                                BigDecimal reservePrice, BigDecimal minimumIncrement, LocalDateTime startTime, LocalDateTime endTime) {
         this.title = title;
         this.description = description;
         this.category = category;
         this.startingPrice = startingPrice;
         this.reservePrice = reservePrice;
-        this.minBidIncrement = minBidIncrement;
+        this.minimumIncrement = minimumIncrement;
+        this.minBidIncrement = minimumIncrement;
         this.startTime = startTime;
         this.endTime = endTime;
     }
@@ -71,7 +69,7 @@ public class CreateAuctionRequest {
     }
 
     public String getCategory() {
-        return category;
+        return category != null ? category : "GENERAL";
     }
 
     public void setCategory(String category) {
@@ -87,23 +85,35 @@ public class CreateAuctionRequest {
     }
 
     public BigDecimal getReservePrice() {
-        return reservePrice;
+        return reservePrice != null ? reservePrice : startingPrice;
     }
 
     public void setReservePrice(BigDecimal reservePrice) {
         this.reservePrice = reservePrice;
     }
 
+    public BigDecimal getMinimumIncrement() {
+        if (minimumIncrement != null) return minimumIncrement;
+        if (minBidIncrement != null) return minBidIncrement;
+        return BigDecimal.ONE;
+    }
+
+    public void setMinimumIncrement(BigDecimal minimumIncrement) {
+        this.minimumIncrement = minimumIncrement;
+        this.minBidIncrement = minimumIncrement;
+    }
+
     public BigDecimal getMinBidIncrement() {
-        return minBidIncrement;
+        return getMinimumIncrement();
     }
 
     public void setMinBidIncrement(BigDecimal minBidIncrement) {
         this.minBidIncrement = minBidIncrement;
+        this.minimumIncrement = minBidIncrement;
     }
 
     public LocalDateTime getStartTime() {
-        return startTime;
+        return startTime != null ? startTime : LocalDateTime.now();
     }
 
     public void setStartTime(LocalDateTime startTime) {
@@ -121,10 +131,10 @@ public class CreateAuctionRequest {
     public static class CreateAuctionRequestBuilder {
         private String title;
         private String description;
-        private String category;
+        private String category = "GENERAL";
         private BigDecimal startingPrice;
         private BigDecimal reservePrice;
-        private BigDecimal minBidIncrement;
+        private BigDecimal minimumIncrement;
         private LocalDateTime startTime;
         private LocalDateTime endTime;
 
@@ -156,8 +166,13 @@ public class CreateAuctionRequest {
             return this;
         }
 
+        public CreateAuctionRequestBuilder minimumIncrement(BigDecimal minimumIncrement) {
+            this.minimumIncrement = minimumIncrement;
+            return this;
+        }
+
         public CreateAuctionRequestBuilder minBidIncrement(BigDecimal minBidIncrement) {
-            this.minBidIncrement = minBidIncrement;
+            this.minimumIncrement = minBidIncrement;
             return this;
         }
 
@@ -172,7 +187,7 @@ public class CreateAuctionRequest {
         }
 
         public CreateAuctionRequest build() {
-            return new CreateAuctionRequest(title, description, category, startingPrice, reservePrice, minBidIncrement, startTime, endTime);
+            return new CreateAuctionRequest(title, description, category, startingPrice, reservePrice, minimumIncrement, startTime, endTime);
         }
     }
 }

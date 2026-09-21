@@ -1,9 +1,8 @@
 package com.auction.auction.entity;
 
 public enum AuctionStatus {
-    DRAFT,
+    SCHEDULED,
     ACTIVE,
-    ENDED,
-    SETTLED,
+    CLOSED,
     CANCELLED
 }

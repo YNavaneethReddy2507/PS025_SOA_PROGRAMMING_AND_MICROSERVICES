@@ -1,7 +1,6 @@
 package com.auction.auction.dto;
 
 import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -9,7 +8,7 @@ import java.time.LocalDateTime;
 
 public class UpdateAuctionRequest {
 
-    @Size(max = 128, message = "Title must not exceed 128 characters")
+    @Size(min = 3, max = 128, message = "Title must be between 3 and 128 characters")
     private String title;
 
     private String description;
@@ -17,24 +16,31 @@ public class UpdateAuctionRequest {
     @Size(max = 64, message = "Category must not exceed 64 characters")
     private String category;
 
+    @DecimalMin(value = "0.01", message = "Starting price must be greater than 0")
+    private BigDecimal startingPrice;
+
     @DecimalMin(value = "0.01", message = "Reserve price must be greater than 0")
     private BigDecimal reservePrice;
 
-    @DecimalMin(value = "0.01", message = "Minimum bid increment must be greater than 0")
+    @DecimalMin(value = "0.01", message = "Minimum increment must be greater than 0")
+    private BigDecimal minimumIncrement;
+
     private BigDecimal minBidIncrement;
 
-    @Future(message = "End time must be in the future")
     private LocalDateTime endTime;
 
     public UpdateAuctionRequest() {
     }
 
-    public UpdateAuctionRequest(String title, String description, String category, BigDecimal reservePrice, BigDecimal minBidIncrement, LocalDateTime endTime) {
+    public UpdateAuctionRequest(String title, String description, String category, BigDecimal startingPrice,
+                                BigDecimal reservePrice, BigDecimal minimumIncrement, LocalDateTime endTime) {
         this.title = title;
         this.description = description;
         this.category = category;
+        this.startingPrice = startingPrice;
         this.reservePrice = reservePrice;
-        this.minBidIncrement = minBidIncrement;
+        this.minimumIncrement = minimumIncrement;
+        this.minBidIncrement = minimumIncrement;
         this.endTime = endTime;
     }
 
@@ -66,6 +72,14 @@ public class UpdateAuctionRequest {
         this.category = category;
     }
 
+    public BigDecimal getStartingPrice() {
+        return startingPrice;
+    }
+
+    public void setStartingPrice(BigDecimal startingPrice) {
+        this.startingPrice = startingPrice;
+    }
+
     public BigDecimal getReservePrice() {
         return reservePrice;
     }
@@ -74,12 +88,23 @@ public class UpdateAuctionRequest {
         this.reservePrice = reservePrice;
     }
 
-    public BigDecimal getMinBidIncrement() {
+    public BigDecimal getMinimumIncrement() {
+        if (minimumIncrement != null) return minimumIncrement;
         return minBidIncrement;
+    }
+
+    public void setMinimumIncrement(BigDecimal minimumIncrement) {
+        this.minimumIncrement = minimumIncrement;
+        this.minBidIncrement = minimumIncrement;
+    }
+
+    public BigDecimal getMinBidIncrement() {
+        return getMinimumIncrement();
     }
 
     public void setMinBidIncrement(BigDecimal minBidIncrement) {
         this.minBidIncrement = minBidIncrement;
+        this.minimumIncrement = minBidIncrement;
     }
 
     public LocalDateTime getEndTime() {
@@ -94,8 +119,9 @@ public class UpdateAuctionRequest {
         private String title;
         private String description;
         private String category;
+        private BigDecimal startingPrice;
         private BigDecimal reservePrice;
-        private BigDecimal minBidIncrement;
+        private BigDecimal minimumIncrement;
         private LocalDateTime endTime;
 
         UpdateAuctionRequestBuilder() {
@@ -116,13 +142,23 @@ public class UpdateAuctionRequest {
             return this;
         }
 
+        public UpdateAuctionRequestBuilder startingPrice(BigDecimal startingPrice) {
+            this.startingPrice = startingPrice;
+            return this;
+        }
+
         public UpdateAuctionRequestBuilder reservePrice(BigDecimal reservePrice) {
             this.reservePrice = reservePrice;
             return this;
         }
 
+        public UpdateAuctionRequestBuilder minimumIncrement(BigDecimal minimumIncrement) {
+            this.minimumIncrement = minimumIncrement;
+            return this;
+        }
+
         public UpdateAuctionRequestBuilder minBidIncrement(BigDecimal minBidIncrement) {
-            this.minBidIncrement = minBidIncrement;
+            this.minimumIncrement = minBidIncrement;
             return this;
         }
 
@@ -132,7 +168,7 @@ public class UpdateAuctionRequest {
         }
 
         public UpdateAuctionRequest build() {
-            return new UpdateAuctionRequest(title, description, category, reservePrice, minBidIncrement, endTime);
+            return new UpdateAuctionRequest(title, description, category, startingPrice, reservePrice, minimumIncrement, endTime);
         }
     }
 }
