@@ -31,7 +31,7 @@ public class BiddingServiceImpl implements BiddingService {
     private final AuctionBidStateRepository stateRepository;
     private final AuctionClient auctionClient;
 
-    // Fine-grained lock per auction to protect critical bidding sections under high concurrency
+    // Per-auction mutex lock to serialize simultaneous concurrent bids
     private final ConcurrentHashMap<Long, ReentrantLock> auctionLocks = new ConcurrentHashMap<>();
 
     public BiddingServiceImpl(BidRepository bidRepository, AuctionBidStateRepository stateRepository, AuctionClient auctionClient) {
@@ -44,59 +44,88 @@ public class BiddingServiceImpl implements BiddingService {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public BidResponse placeBid(PlaceBidRequest request, Long bidderId) {
         Long auctionId = request.getAuctionId();
-        BigDecimal bidAmount = request.getBidAmount();
+        BigDecimal bidAmount = request.getAmount();
         LocalDateTime bidTime = LocalDateTime.now();
+
+        if (bidderId == null) {
+            throw new UnauthorizedException("Bidder identity is missing or invalid");
+        }
+        if (bidAmount == null || bidAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Bid amount must be greater than 0");
+        }
 
         log.info("Received bid placement request: bidder={}, auction={}, amount={}", bidderId, auctionId, bidAmount);
 
-        ReentrantLock lock = auctionLocks.computeIfAbsent(auctionId, k -> new ReentrantLock());
+        ReentrantLock lock = auctionLocks.computeIfAbsent(auctionId, k -> new ReentrantLock(true));
         lock.lock();
         try {
-            // 1. Fetch current auction details via Feign client or local state cache
-            AuctionBidState state = getOrSyncAuctionBidState(auctionId);
-
-            // 2. Validate bidder is not the seller
-            if (state.getSellerId().equals(bidderId)) {
-                log.warn("Bid rejected: Seller {} cannot bid on their own auction {}", bidderId, auctionId);
-                throw new SellerCannotBidException("Sellers cannot place bids on their own auctions");
+            // 1. Fetch live auction metadata from Auction Service
+            AuctionDto auctionDto = auctionClient.getAuctionById(auctionId);
+            if (auctionDto == null) {
+                log.warn("Bid rejected: Auction {} does not exist", auctionId);
+                throw new ResourceNotFoundException("Auction not found with ID: " + auctionId);
             }
 
-            // 3. Validate bid amount against starting price or current highest bid + min increment
+            // 2. Validate auction is ACTIVE
+            if (!"ACTIVE".equalsIgnoreCase(auctionDto.getStatus())) {
+                log.warn("Bid rejected: Auction {} is not ACTIVE (current: {})", auctionId, auctionDto.getStatus());
+                throw new AuctionNotActiveException("Auction is not in ACTIVE state. Current status: " + auctionDto.getStatus());
+            }
+
+            // 3. Validate current time is before endTime
+            if (auctionDto.getEndTime() != null && LocalDateTime.now().isAfter(auctionDto.getEndTime())) {
+                log.warn("Bid rejected: Auction {} bidding period has expired (endTime={})", auctionId, auctionDto.getEndTime());
+                throw new AuctionNotActiveException("Auction bidding period has expired");
+            }
+
+            // 4. Validate bidder is not the seller
+            if (auctionDto.getSellerId() != null && auctionDto.getSellerId().equals(bidderId)) {
+                log.warn("Bid rejected: Seller {} cannot bid on own auction {}", bidderId, auctionId);
+                throw new SellerCannotBidException("Bidder cannot be seller");
+            }
+
+            // 5. Fetch or sync AuctionBidState
+            AuctionBidState state = getOrSyncAuctionBidState(auctionId, auctionDto);
+
+            // 6. Validate bid amount exceeds current highest bid and satisfies minimum increment
+            BigDecimal currentHighest = state.getCurrentHighestBid();
+            BigDecimal minInc = state.getMinBidIncrement() != null ? state.getMinBidIncrement() : BigDecimal.ONE;
+
             BigDecimal minRequiredBid;
             if (state.getWinningBidderId() == null) {
-                minRequiredBid = state.getCurrentHighestBid();
+                // First bid must be at least startingPrice
+                minRequiredBid = currentHighest;
             } else {
-                minRequiredBid = state.getCurrentHighestBid().add(state.getMinBidIncrement());
+                // Subsequent bids must exceed currentHighest by at least minBidIncrement
+                minRequiredBid = currentHighest.add(minInc);
             }
 
             if (bidAmount.compareTo(minRequiredBid) < 0) {
-                log.warn("Sub-threshold bid rejected for auction {}: Offered {}, required at least {}", auctionId, bidAmount, minRequiredBid);
+                log.warn("Sub-threshold bid rejected for auction {}: Offered {}, required at least {}",
+                        auctionId, bidAmount, minRequiredBid);
                 throw new SubThresholdBidException(String.format(
                         "Bid amount %s is below minimum required bid threshold %s", bidAmount, minRequiredBid
                 ));
             }
 
-            // 4. Mark previous winning bids as OUTBID
-            bidRepository.updateBidStatusForAuction(auctionId, BidStatus.WINNING, BidStatus.OUTBID);
-
-            // 5. Create new winning bid record
+            // 7. Persist accepted bid
             Bid newBid = Bid.builder()
                     .auctionId(auctionId)
                     .bidderId(bidderId)
-                    .bidAmount(bidAmount)
-                    .status(BidStatus.WINNING)
-                    .bidTimestamp(bidTime)
+                    .amount(bidAmount)
+                    .status(BidStatus.ACCEPTED)
+                    .acceptedAt(bidTime)
                     .build();
 
             Bid savedBid = bidRepository.save(newBid);
 
-            // 6. Update high-concurrency state
+            // 8. Update high-concurrency state atomically
             state.setCurrentHighestBid(bidAmount);
             state.setWinningBidderId(bidderId);
             state.setTotalBidsCount(state.getTotalBidsCount() + 1);
             stateRepository.save(state);
 
-            // 7. Propagate highest bid to Auction Service asynchronously or synchronously
+            // 9. Propagate highest bid to Auction Service
             try {
                 auctionClient.updateHighestBid(auctionId, UpdateHighestBidRequest.builder()
                         .bidderId(bidderId)
@@ -106,9 +135,9 @@ public class BiddingServiceImpl implements BiddingService {
                 log.warn("Could not sync highest bid to Auction Service for auction {}: {}", auctionId, e.getMessage());
             }
 
-            log.info("Bid successfully accepted: bidId={}, auctionId={}, amount={}", savedBid.getId(), auctionId, bidAmount);
+            log.info("Bid successfully accepted and persisted: bidId={}, auctionId={}, amount={}", savedBid.getId(), auctionId, bidAmount);
 
-            return mapToResponse(savedBid, true);
+            return mapToResponse(savedBid, "Bid accepted successfully", true);
         } finally {
             lock.unlock();
         }
@@ -116,11 +145,28 @@ public class BiddingServiceImpl implements BiddingService {
 
     @Override
     @Transactional(readOnly = true)
+    public BidResponse getBidById(Long id) {
+        Bid bid = bidRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Bid not found with ID: " + id));
+        return mapToResponse(bid, "Bid retrieved successfully", false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<BidResponse> getBidsByAuction(Long auctionId) {
-        return bidRepository.findByAuctionIdOrderByBidTimestampDesc(auctionId)
+        return bidRepository.findByAuctionIdOrderByAcceptedAtDesc(auctionId)
                 .stream()
-                .map(b -> mapToResponse(b, b.getStatus() == BidStatus.WINNING))
+                .map(b -> mapToResponse(b, "Bid record", b.getStatus() == BidStatus.ACCEPTED))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BidResponse getHighestBid(Long auctionId) {
+        Bid highestBid = bidRepository.findHighestAcceptedBid(auctionId)
+                .orElseThrow(() -> new ResourceNotFoundException("No accepted bids found for auction: " + auctionId));
+
+        return mapToResponse(highestBid, "Current highest bid", true);
     }
 
     @Override
@@ -128,11 +174,13 @@ public class BiddingServiceImpl implements BiddingService {
     public ClearanceResultDto calculateClearance(Long auctionId) {
         log.info("Calculating deterministic clearance for auction ID: {}", auctionId);
 
-        // Fetch all bids ordered deterministically: Highest amount first, earliest timestamp as tie-breaker
-        List<Bid> bids = bidRepository.findByAuctionIdOrderByBidAmountDescBidTimestampAsc(auctionId);
+        List<Bid> bids = bidRepository.findByAuctionIdOrderByAmountDescAcceptedAtAsc(auctionId);
 
         AuctionBidState state = stateRepository.findByAuctionId(auctionId)
-                .orElseGet(() -> getOrSyncAuctionBidState(auctionId));
+                .orElseGet(() -> {
+                    AuctionDto dto = auctionClient.getAuctionById(auctionId);
+                    return getOrSyncAuctionBidState(auctionId, dto);
+                });
 
         if (bids.isEmpty()) {
             log.info("Auction ID {} cleared with NO BIDS", auctionId);
@@ -148,7 +196,8 @@ public class BiddingServiceImpl implements BiddingService {
         }
 
         Bid winningBid = bids.get(0);
-        boolean reserveMet = winningBid.getBidAmount().compareTo(state.getReservePrice()) >= 0;
+        BigDecimal reserve = state.getReservePrice() != null ? state.getReservePrice() : state.getCurrentHighestBid();
+        boolean reserveMet = winningBid.getAmount().compareTo(reserve) >= 0;
 
         String clearanceStatus = reserveMet ? "CLEARED" : "RESERVE_NOT_MET";
         String message = reserveMet ?
@@ -156,12 +205,12 @@ public class BiddingServiceImpl implements BiddingService {
                 "Highest bid did not meet the seller's reserve price";
 
         log.info("Auction clearance calculated: auctionId={}, winner={}, amount={}, reserveMet={}",
-                auctionId, winningBid.getBidderId(), winningBid.getBidAmount(), reserveMet);
+                auctionId, winningBid.getBidderId(), winningBid.getAmount(), reserveMet);
 
         return ClearanceResultDto.builder()
                 .auctionId(auctionId)
                 .winningBidderId(reserveMet ? winningBid.getBidderId() : null)
-                .winningAmount(winningBid.getBidAmount())
+                .winningAmount(winningBid.getAmount())
                 .reserveMet(reserveMet)
                 .clearedAt(LocalDateTime.now())
                 .clearanceStatus(clearanceStatus)
@@ -169,37 +218,27 @@ public class BiddingServiceImpl implements BiddingService {
                 .build();
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public BidResponse getHighestBid(Long auctionId) {
-        Bid highestBid = bidRepository.findFirstByAuctionIdAndStatus(auctionId, BidStatus.WINNING)
-                .orElseThrow(() -> new ResourceNotFoundException("No winning bids found for auction: " + auctionId));
-
-        return mapToResponse(highestBid, true);
-    }
-
-    private AuctionBidState getOrSyncAuctionBidState(Long auctionId) {
+    private AuctionBidState getOrSyncAuctionBidState(Long auctionId, AuctionDto auctionDto) {
         return stateRepository.findByAuctionId(auctionId).orElseGet(() -> {
-            log.info("Synchronizing auction state from Auction Service for ID: {}", auctionId);
-            AuctionDto auctionDto = auctionClient.getAuctionById(auctionId);
             if (auctionDto == null) {
                 throw new ResourceNotFoundException("Auction not found with ID: " + auctionId);
             }
 
-            if (!"ACTIVE".equalsIgnoreCase(auctionDto.getStatus())) {
-                throw new AuctionNotActiveException("Auction is not in ACTIVE state. Current: " + auctionDto.getStatus());
-            }
+            BigDecimal currentPrice = auctionDto.getCurrentPrice() != null ?
+                    auctionDto.getCurrentPrice() : auctionDto.getStartingPrice();
 
-            if (auctionDto.getEndTime() != null && LocalDateTime.now().isAfter(auctionDto.getEndTime())) {
-                throw new AuctionNotActiveException("Auction bidding period has expired");
-            }
+            BigDecimal minInc = auctionDto.getMinimumIncrement() != null ?
+                    auctionDto.getMinimumIncrement() : BigDecimal.ONE;
+
+            BigDecimal reserve = auctionDto.getReservePrice() != null ?
+                    auctionDto.getReservePrice() : currentPrice;
 
             AuctionBidState newState = AuctionBidState.builder()
                     .auctionId(auctionId)
-                    .currentHighestBid(auctionDto.getCurrentHighestBid() != null ? auctionDto.getCurrentHighestBid() : auctionDto.getStartingPrice())
-                    .winningBidderId(auctionDto.getWinningBidderId())
-                    .minBidIncrement(auctionDto.getMinBidIncrement())
-                    .reservePrice(auctionDto.getReservePrice())
+                    .currentHighestBid(currentPrice)
+                    .winningBidderId(auctionDto.getWinnerId())
+                    .minBidIncrement(minInc)
+                    .reservePrice(reserve)
                     .sellerId(auctionDto.getSellerId())
                     .totalBidsCount(0L)
                     .build();
@@ -208,14 +247,15 @@ public class BiddingServiceImpl implements BiddingService {
         });
     }
 
-    private BidResponse mapToResponse(Bid bid, boolean isWinning) {
+    private BidResponse mapToResponse(Bid bid, String message, boolean isWinning) {
         return BidResponse.builder()
                 .id(bid.getId())
                 .auctionId(bid.getAuctionId())
                 .bidderId(bid.getBidderId())
-                .bidAmount(bid.getBidAmount())
+                .amount(bid.getAmount())
                 .status(bid.getStatus())
-                .bidTimestamp(bid.getBidTimestamp())
+                .acceptedAt(bid.getAcceptedAt())
+                .message(message)
                 .isWinning(isWinning)
                 .build();
     }

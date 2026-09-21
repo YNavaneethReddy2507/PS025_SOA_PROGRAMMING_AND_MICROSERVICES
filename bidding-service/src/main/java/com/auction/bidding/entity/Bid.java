@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 @Table(
         name = "bids",
         indexes = {
-                @Index(name = "idx_auction_amount_time", columnList = "auction_id, bid_amount, bid_timestamp"),
+                @Index(name = "idx_auction_amount_time", columnList = "auction_id, amount, accepted_at"),
                 @Index(name = "idx_bidder_id", columnList = "bidder_id")
         }
 )
@@ -26,15 +26,15 @@ public class Bid {
     @Column(name = "bidder_id", nullable = false)
     private Long bidderId;
 
-    @Column(name = "bid_amount", nullable = false, precision = 19, scale = 4)
-    private BigDecimal bidAmount;
+    @Column(name = "amount", nullable = false, precision = 19, scale = 4)
+    private BigDecimal amount;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private BidStatus status;
 
-    @Column(name = "bid_timestamp", nullable = false)
-    private LocalDateTime bidTimestamp;
+    @Column(name = "accepted_at", nullable = false)
+    private LocalDateTime acceptedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -43,13 +43,13 @@ public class Bid {
     public Bid() {
     }
 
-    public Bid(Long id, Long auctionId, Long bidderId, BigDecimal bidAmount, BidStatus status, LocalDateTime bidTimestamp, LocalDateTime createdAt) {
+    public Bid(Long id, Long auctionId, Long bidderId, BigDecimal amount, BidStatus status, LocalDateTime acceptedAt, LocalDateTime createdAt) {
         this.id = id;
         this.auctionId = auctionId;
         this.bidderId = bidderId;
-        this.bidAmount = bidAmount;
+        this.amount = amount;
         this.status = status;
-        this.bidTimestamp = bidTimestamp;
+        this.acceptedAt = acceptedAt;
         this.createdAt = createdAt;
     }
 
@@ -81,12 +81,12 @@ public class Bid {
         this.bidderId = bidderId;
     }
 
-    public BigDecimal getBidAmount() {
-        return bidAmount;
+    public BigDecimal getAmount() {
+        return amount;
     }
 
-    public void setBidAmount(BigDecimal bidAmount) {
-        this.bidAmount = bidAmount;
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
     }
 
     public BidStatus getStatus() {
@@ -97,12 +97,12 @@ public class Bid {
         this.status = status;
     }
 
-    public LocalDateTime getBidTimestamp() {
-        return bidTimestamp;
+    public LocalDateTime getAcceptedAt() {
+        return acceptedAt;
     }
 
-    public void setBidTimestamp(LocalDateTime bidTimestamp) {
-        this.bidTimestamp = bidTimestamp;
+    public void setAcceptedAt(LocalDateTime acceptedAt) {
+        this.acceptedAt = acceptedAt;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -113,13 +113,30 @@ public class Bid {
         this.createdAt = createdAt;
     }
 
+    // --- Aliases for backward compatibility ---
+    public BigDecimal getBidAmount() {
+        return amount;
+    }
+
+    public void setBidAmount(BigDecimal bidAmount) {
+        this.amount = bidAmount;
+    }
+
+    public LocalDateTime getBidTimestamp() {
+        return acceptedAt;
+    }
+
+    public void setBidTimestamp(LocalDateTime bidTimestamp) {
+        this.acceptedAt = bidTimestamp;
+    }
+
     public static class BidBuilder {
         private Long id;
         private Long auctionId;
         private Long bidderId;
-        private BigDecimal bidAmount;
+        private BigDecimal amount;
         private BidStatus status;
-        private LocalDateTime bidTimestamp;
+        private LocalDateTime acceptedAt;
         private LocalDateTime createdAt;
 
         BidBuilder() {
@@ -140,8 +157,13 @@ public class Bid {
             return this;
         }
 
+        public BidBuilder amount(BigDecimal amount) {
+            this.amount = amount;
+            return this;
+        }
+
         public BidBuilder bidAmount(BigDecimal bidAmount) {
-            this.bidAmount = bidAmount;
+            this.amount = bidAmount;
             return this;
         }
 
@@ -150,8 +172,13 @@ public class Bid {
             return this;
         }
 
+        public BidBuilder acceptedAt(LocalDateTime acceptedAt) {
+            this.acceptedAt = acceptedAt;
+            return this;
+        }
+
         public BidBuilder bidTimestamp(LocalDateTime bidTimestamp) {
-            this.bidTimestamp = bidTimestamp;
+            this.acceptedAt = bidTimestamp;
             return this;
         }
 
@@ -161,7 +188,8 @@ public class Bid {
         }
 
         public Bid build() {
-            return new Bid(id, auctionId, bidderId, bidAmount, status, bidTimestamp, createdAt);
+            LocalDateTime timestamp = this.acceptedAt != null ? this.acceptedAt : LocalDateTime.now();
+            return new Bid(id, auctionId, bidderId, amount, status, timestamp, createdAt);
         }
     }
 }

@@ -42,6 +42,14 @@ public class PlaceBidRequest {
         this.bidAmount = bidAmount;
     }
 
+    public BigDecimal getAmount() {
+        return bidAmount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.bidAmount = amount;
+    }
+
     public static class PlaceBidRequestBuilder {
         private Long auctionId;
         private BigDecimal bidAmount;

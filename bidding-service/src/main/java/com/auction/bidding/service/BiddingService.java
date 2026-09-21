@@ -8,6 +8,7 @@ import java.util.List;
 
 public interface BiddingService {
     BidResponse placeBid(PlaceBidRequest request, Long bidderId);
+    BidResponse getBidById(Long id);
     List<BidResponse> getBidsByAuction(Long auctionId);
     ClearanceResultDto calculateClearance(Long auctionId);
     BidResponse getHighestBid(Long auctionId);

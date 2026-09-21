@@ -87,6 +87,30 @@ public class AuctionDto {
         this.currentHighestBid = currentHighestBid;
     }
 
+    public BigDecimal getCurrentPrice() {
+        return currentHighestBid;
+    }
+
+    public void setCurrentPrice(BigDecimal currentPrice) {
+        this.currentHighestBid = currentPrice;
+    }
+
+    public BigDecimal getMinimumIncrement() {
+        return minBidIncrement;
+    }
+
+    public void setMinimumIncrement(BigDecimal minimumIncrement) {
+        this.minBidIncrement = minimumIncrement;
+    }
+
+    public Long getWinnerId() {
+        return winningBidderId;
+    }
+
+    public void setWinnerId(Long winnerId) {
+        this.winningBidderId = winnerId;
+    }
+
     public Long getWinningBidderId() {
         return winningBidderId;
     }

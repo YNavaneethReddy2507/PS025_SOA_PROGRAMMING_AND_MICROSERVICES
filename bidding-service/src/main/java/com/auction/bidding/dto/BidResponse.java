@@ -10,21 +10,23 @@ public class BidResponse {
     private Long id;
     private Long auctionId;
     private Long bidderId;
-    private BigDecimal bidAmount;
+    private BigDecimal amount;
     private BidStatus status;
-    private LocalDateTime bidTimestamp;
+    private LocalDateTime acceptedAt;
+    private String message;
     private boolean isWinning;
 
     public BidResponse() {
     }
 
-    public BidResponse(Long id, Long auctionId, Long bidderId, BigDecimal bidAmount, BidStatus status, LocalDateTime bidTimestamp, boolean isWinning) {
+    public BidResponse(Long id, Long auctionId, Long bidderId, BigDecimal amount, BidStatus status, LocalDateTime acceptedAt, String message, boolean isWinning) {
         this.id = id;
         this.auctionId = auctionId;
         this.bidderId = bidderId;
-        this.bidAmount = bidAmount;
+        this.amount = amount;
         this.status = status;
-        this.bidTimestamp = bidTimestamp;
+        this.acceptedAt = acceptedAt;
+        this.message = message;
         this.isWinning = isWinning;
     }
 
@@ -56,12 +58,12 @@ public class BidResponse {
         this.bidderId = bidderId;
     }
 
-    public BigDecimal getBidAmount() {
-        return bidAmount;
+    public BigDecimal getAmount() {
+        return amount;
     }
 
-    public void setBidAmount(BigDecimal bidAmount) {
-        this.bidAmount = bidAmount;
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
     }
 
     public BidStatus getStatus() {
@@ -72,12 +74,20 @@ public class BidResponse {
         this.status = status;
     }
 
-    public LocalDateTime getBidTimestamp() {
-        return bidTimestamp;
+    public LocalDateTime getAcceptedAt() {
+        return acceptedAt;
     }
 
-    public void setBidTimestamp(LocalDateTime bidTimestamp) {
-        this.bidTimestamp = bidTimestamp;
+    public void setAcceptedAt(LocalDateTime acceptedAt) {
+        this.acceptedAt = acceptedAt;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
     }
 
     public boolean isWinning() {
@@ -88,13 +98,31 @@ public class BidResponse {
         isWinning = winning;
     }
 
+    // --- Aliases for backward compatibility ---
+    public BigDecimal getBidAmount() {
+        return amount;
+    }
+
+    public void setBidAmount(BigDecimal bidAmount) {
+        this.amount = bidAmount;
+    }
+
+    public LocalDateTime getBidTimestamp() {
+        return acceptedAt;
+    }
+
+    public void setBidTimestamp(LocalDateTime bidTimestamp) {
+        this.acceptedAt = bidTimestamp;
+    }
+
     public static class BidResponseBuilder {
         private Long id;
         private Long auctionId;
         private Long bidderId;
-        private BigDecimal bidAmount;
+        private BigDecimal amount;
         private BidStatus status;
-        private LocalDateTime bidTimestamp;
+        private LocalDateTime acceptedAt;
+        private String message;
         private boolean isWinning;
 
         BidResponseBuilder() {
@@ -115,8 +143,13 @@ public class BidResponse {
             return this;
         }
 
+        public BidResponseBuilder amount(BigDecimal amount) {
+            this.amount = amount;
+            return this;
+        }
+
         public BidResponseBuilder bidAmount(BigDecimal bidAmount) {
-            this.bidAmount = bidAmount;
+            this.amount = bidAmount;
             return this;
         }
 
@@ -125,8 +158,18 @@ public class BidResponse {
             return this;
         }
 
+        public BidResponseBuilder acceptedAt(LocalDateTime acceptedAt) {
+            this.acceptedAt = acceptedAt;
+            return this;
+        }
+
         public BidResponseBuilder bidTimestamp(LocalDateTime bidTimestamp) {
-            this.bidTimestamp = bidTimestamp;
+            this.acceptedAt = bidTimestamp;
+            return this;
+        }
+
+        public BidResponseBuilder message(String message) {
+            this.message = message;
             return this;
         }
 
@@ -136,7 +179,7 @@ public class BidResponse {
         }
 
         public BidResponse build() {
-            return new BidResponse(id, auctionId, bidderId, bidAmount, status, bidTimestamp, isWinning);
+            return new BidResponse(id, auctionId, bidderId, amount, status, acceptedAt, message, isWinning);
         }
     }
 }
