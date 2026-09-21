@@ -80,4 +80,51 @@ class EurekaServiceRegistrationTest {
             assertEquals(InstanceInfo.InstanceStatus.UP, registeredInstance.getStatus(), "Status must be UP");
         }
     }
+
+    @Test
+    @DisplayName("Verify stopping a service changes status and restarting triggers re-registration")
+    void testServiceStatusChangeAndReRegistration() {
+        String testService = "AUCTION-SERVICE";
+        String instanceId = "auction-service:127.0.0.1:8082";
+
+        InstanceInfo instanceInfo = InstanceInfo.Builder.newBuilder()
+                .setAppName(testService)
+                .setInstanceId(instanceId)
+                .setHostName("127.0.0.1")
+                .setIPAddr("127.0.0.1")
+                .setPort(8082)
+                .setStatus(InstanceInfo.InstanceStatus.UP)
+                .setDataCenterInfo(new MyDataCenterInfo(DataCenterInfo.Name.MyOwn))
+                .build();
+
+        // 1. Initial registration
+        instanceRegistry.register(instanceInfo, false);
+        Application app = instanceRegistry.getApplication(testService);
+        assertNotNull(app);
+        assertEquals(InstanceInfo.InstanceStatus.UP, app.getByInstanceId(instanceId).getStatus());
+
+        // 2. Stop service / Mark status DOWN / cancel
+        instanceRegistry.statusUpdate(testService, instanceId, InstanceInfo.InstanceStatus.DOWN, "1", false);
+        assertEquals(InstanceInfo.InstanceStatus.DOWN, instanceRegistry.getApplication(testService).getByInstanceId(instanceId).getStatus());
+
+        // Deregister on stop
+        boolean canceled = instanceRegistry.cancel(testService, instanceId, false);
+        assertTrue(canceled, "Service instance cancellation on stop should succeed");
+
+        // 3. Restart service and re-register as UP
+        InstanceInfo restartedInstance = InstanceInfo.Builder.newBuilder()
+                .setAppName(testService)
+                .setInstanceId(instanceId)
+                .setHostName("127.0.0.1")
+                .setIPAddr("127.0.0.1")
+                .setPort(8082)
+                .setStatus(InstanceInfo.InstanceStatus.UP)
+                .setDataCenterInfo(new MyDataCenterInfo(DataCenterInfo.Name.MyOwn))
+                .build();
+
+        instanceRegistry.register(restartedInstance, false);
+        Application restartedApp = instanceRegistry.getApplication(testService);
+        assertNotNull(restartedApp, "Restarted application must re-appear in Eureka registry");
+        assertEquals(InstanceInfo.InstanceStatus.UP, restartedApp.getByInstanceId(instanceId).getStatus(), "Restarted service status must be UP");
+    }
 }
