@@ -353,4 +353,130 @@ public class BiddingConcurrencyTest {
         assertTrue(clearance.isReserveMet());
         assertEquals("CLEARED", clearance.getClearanceStatus());
     }
+
+    @Test
+    @DisplayName("Concurrency: 50+ simultaneous bids - no lost updates, strict monotonic state")
+    void testFiftySimultaneousBids() throws InterruptedException {
+        Long auctionId = 6L;
+        AuctionDto auctionDto = createMockAuctionDto(auctionId, new BigDecimal("100.00"), new BigDecimal("5.00"), new BigDecimal("300.00"));
+        when(auctionClient.getAuctionById(auctionId)).thenReturn(auctionDto);
+
+        int threadCount = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(threadCount);
+
+        AtomicInteger successCount = new AtomicInteger(0);
+
+        for (int i = 1; i <= threadCount; i++) {
+            final long bidderId = 500L + i;
+            final BigDecimal amount = new BigDecimal(100 + (i * 5) + ".00"); // 105, 110, ... 350
+
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    PlaceBidRequest req = PlaceBidRequest.builder()
+                            .auctionId(auctionId)
+                            .bidAmount(amount)
+                            .build();
+                    biddingService.placeBid(req, bidderId);
+                    successCount.incrementAndGet();
+                } catch (Exception ignored) {
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        startLatch.countDown();
+        assertTrue(doneLatch.await(15, TimeUnit.SECONDS), "Timed out waiting for 50 concurrent bids");
+        executor.shutdown();
+
+        // Invariant checks
+        AuctionBidState state = stateRepository.findByAuctionId(auctionId).orElseThrow();
+        Bid highestAccepted = bidRepository.findHighestAcceptedBid(auctionId).orElseThrow();
+
+        // No lost updates: highest accepted bid matches auction state
+        assertBigDecimalEquals(highestAccepted.getAmount(), state.getCurrentHighestBid());
+        assertEquals(highestAccepted.getBidderId(), state.getWinningBidderId());
+
+        // Max submitted bid was 350.00 by bidder 550L
+        assertBigDecimalEquals(new BigDecimal("350.00"), state.getCurrentHighestBid());
+        assertEquals(550L, state.getWinningBidderId());
+        assertTrue(state.getTotalBidsCount() > 0);
+    }
+
+    @Test
+    @DisplayName("Concurrency: Simultaneous bid placement and auction close - no post-close bids accepted")
+    void testSimultaneousBidAndAuctionClose() throws InterruptedException {
+        Long auctionId = 7L;
+        AuctionDto activeAuction = createMockAuctionDto(auctionId, new BigDecimal("100.00"), new BigDecimal("10.00"), new BigDecimal("150.00"));
+        when(auctionClient.getAuctionById(auctionId)).thenReturn(activeAuction);
+
+        // Pre-place a valid qualifying bid
+        PlaceBidRequest initialBid = PlaceBidRequest.builder()
+                .auctionId(auctionId)
+                .bidAmount(new BigDecimal("120.00"))
+                .build();
+        biddingService.placeBid(initialBid, 11L);
+
+        int biddingThreads = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(biddingThreads + 1);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(biddingThreads + 1);
+
+        AtomicInteger postCloseRejections = new AtomicInteger(0);
+
+        // 1. Thread that closes auction mid-flight
+        executor.submit(() -> {
+            try {
+                startLatch.await();
+                Thread.sleep(10); // allow interleaved scheduling
+                activeAuction.setStatus("CLOSED");
+            } catch (Exception ignored) {
+            } finally {
+                doneLatch.countDown();
+            }
+        });
+
+        // 2. Multiple bidding threads
+        for (int i = 1; i <= biddingThreads; i++) {
+            final long bidderId = 600L + i;
+            final BigDecimal amount = new BigDecimal(120 + (i * 10) + ".00");
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    PlaceBidRequest req = PlaceBidRequest.builder()
+                            .auctionId(auctionId)
+                            .bidAmount(amount)
+                            .build();
+                    biddingService.placeBid(req, bidderId);
+                } catch (com.auction.bidding.exception.AuctionNotActiveException e) {
+                    postCloseRejections.incrementAndGet();
+                } catch (Exception ignored) {
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        startLatch.countDown();
+        assertTrue(doneLatch.await(5, TimeUnit.SECONDS));
+        executor.shutdown();
+
+        // Any bid processed after close must be rejected
+        // Now calculate clearance: must be deterministic based only on accepted bids
+        ClearanceResultDto clearance = biddingService.calculateClearance(auctionId);
+        assertNotNull(clearance);
+        assertNotNull(clearance.getWinningBidderId());
+        assertTrue(clearance.getWinningAmount().compareTo(new BigDecimal("120.00")) >= 0);
+
+        // Subsequent post-close bids MUST throw AuctionNotActiveException
+        PlaceBidRequest postCloseBid = PlaceBidRequest.builder()
+                .auctionId(auctionId)
+                .bidAmount(new BigDecimal("999.00"))
+                .build();
+        assertThrows(com.auction.bidding.exception.AuctionNotActiveException.class,
+                () -> biddingService.placeBid(postCloseBid, 999L));
+    }
 }
