@@ -576,9 +576,76 @@ ORDER BY b.amount DESC, b.acceptedAt ASC, b.id ASC
 ```
 
 ### 12.5 Idempotent Auction Closure & Automated Scheduler
-1. **Idempotent Invariant**: Re-calling `closeAuction` or `closeAndClearAuction` on an already `CLOSED` auction safely returns the existing clearance and winner state without altering database records or triggering duplicate payments.
-2. **Automated Scheduler**: `AuctionScheduler` runs every 30 seconds (`@Scheduled(fixedDelay = 30000)`), executing `auctionRepository.findExpiredAuctions(AuctionStatus.ACTIVE, now)` and safely clearing all expired auctions.
+---
+
+## 13. Containerization & Deployment Architecture (Phase 13)
+
+### 13.1 Docker Container Network Topology
+The system is fully containerized using lightweight Alpine JRE images (`eclipse-temurin:17-jre-alpine`) interconnected via a dedicated Docker bridge network (`auction-network`).
+
+```mermaid
+flowchart TD
+    subgraph Host["Host Ingress"]
+        Port8080["Port 8080 (Gateway)"]
+        Port8761["Port 8761 (Eureka)"]
+        Port3306["Port 3306 (MySQL)"]
+    end
+
+    subgraph DockerNet["Docker Bridge Network: auction-network"]
+        GW["api-gateway:8080"]
+        EUR["eureka-server:8761"]
+        AUTH["auth-service:8081"]
+        AUC["auction-service:8082"]
+        BID["bidding-service:8083"]
+        PAY["payment-service:8084"]
+        DB[("auction-mysql:3306")]
+    end
+
+    Port8080 --> GW
+    Port8761 --> EUR
+    Port3306 --> DB
+
+    GW -->|lb://auth-service| AUTH
+    GW -->|lb://auction-service| AUC
+    GW -->|lb://bidding-service| BID
+    GW -->|lb://payment-service| PAY
+
+    AUC -->|Feign| BID
+    AUC -->|Feign| PAY
+    BID -->|Feign| AUC
+    PAY -->|Feign| AUC
+
+    AUTH -->|auth_user| DB
+    AUC -->|auction_user| DB
+    BID -->|bidding_user| DB
+    PAY -->|payment_user| DB
+
+    AUTH -.->|Heartbeat| EUR
+    AUC -.->|Heartbeat| EUR
+    BID -.->|Heartbeat| EUR
+    PAY -.->|Heartbeat| EUR
+    GW -.->|Heartbeat| EUR
+```
+
+### 13.2 Database Schema Ownership & Least Privilege Principle
+To satisfy strict microservice autonomy and eliminate cross-service table access, each service communicates with MySQL using a dedicated database user granted permissions exclusively to its designated schema:
+
+| Service | Dedicated Database User | Target Schema | Privilege Scope |
+| :--- | :--- | :--- | :--- |
+| `auth-service` | `auth_user` | `auth_db` | `ALL PRIVILEGES ON auth_db.*` |
+| `auction-service` | `auction_user` | `auction_db` | `ALL PRIVILEGES ON auction_db.*` |
+| `bidding-service` | `bidding_user` | `bidding_db` | `ALL PRIVILEGES ON bidding_db.*` |
+| `payment-service` | `payment_user` | `payment_db` | `ALL PRIVILEGES ON payment_db.*` |
+
+Cross-database queries and joins are prohibited. Inter-service data sharing occurs strictly via REST and Feign DTOs.
+
+### 13.3 Container Startup Sequencing & Health Dependency Graph
+Container startup order is managed through Docker Compose healthcheck dependencies:
+1. `auction-mysql` initializes and runs `init-mysql.sql`. Health status is confirmed via `mysqladmin ping`.
+2. `eureka-server` starts and exposes its discovery dashboard. Health status is confirmed via `/actuator/health`.
+3. Business services (`auth-service`, `auction-service`, `bidding-service`, `payment-service`) start conditionally once MySQL and Eureka are reported healthy.
+4. `api-gateway` starts conditionally once Eureka is healthy and begins routing perimeter traffic.
 
 ---
-*End of Phase 7 Architecture Specification.*
+*End of Distributed Architecture Specification.*
 

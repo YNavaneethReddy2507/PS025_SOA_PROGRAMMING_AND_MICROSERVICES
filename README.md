@@ -1,6 +1,6 @@
 # PS025 – Real-Time Distributed Bidding & Auction Clearance Engine
 
-A production-grade, high-concurrency distributed microservices platform for real-time auction bidding, atomic concurrency control, deterministic clearance calculation, and automated escrow payment settlements. Built with **Java 17+ (tested through Java 25)**, **Spring Boot 3.3.5**, **Spring Cloud 2023.0.3**, **Netflix Eureka**, **Spring Cloud Gateway**, **OpenFeign**, **Spring Security + JWT**, **Spring Data JPA**, **MySQL**, **JUnit 5**, **Mockito**, and **Docker**.
+A production-grade, high-concurrency distributed microservices platform for real-time auction bidding, atomic concurrency control, deterministic clearance calculation, and automated escrow payment settlements. Built with **Java 17+ (tested through Java 25)**, **Spring Boot 3.3.5**, **Spring Cloud 2023.0.3**, **Netflix Eureka**, **Spring Cloud Gateway**, **OpenFeign**, **Spring Security + JWT**, **Spring Data JPA**, **MySQL 8.0**, **JUnit 5**, **Mockito**, and **Docker**.
 
 ---
 
@@ -11,6 +11,52 @@ A production-grade, high-concurrency distributed microservices platform for real
 | **2400030020** | Yadamakanti Navaneeth Reddy |
 | **2400030925** | Chithaluri Veera Hemanth |
 | **2400032365** | Dhamothiran |
+
+---
+
+## 📋 Project Status: Phases 1–13 Complete (100%)
+
+| Phase | Description | Deliverables | Status |
+|---|---|---|:---:|
+| **Phase 1** | Requirement Specification & Problem Analysis | `docs/requirements.md` | ✅ **Complete** |
+| **Phase 2** | Architecture Design & Domain Modeling | `docs/architecture.md` | ✅ **Complete** |
+| **Phase 3** | Authentication & User Service | `auth-service` (JWT, BCrypt, RBAC) | ✅ **Complete** |
+| **Phase 4** | Eureka Service Registry | `eureka-server` (Port 8761) | ✅ **Complete** |
+| **Phase 5** | Auction Catalog Service | `auction-service` (Port 8082) | ✅ **Complete** |
+| **Phase 6** | Bidding Engine & Concurrency | `bidding-service` (Port 8083) | ✅ **Complete** |
+| **Phase 7** | Clearance Engine & Winner Selection | Deterministic Price-Time Priority | ✅ **Complete** |
+| **Phase 8** | Payment & Escrow Settlement Service | `payment-service` (Port 8084) | ✅ **Complete** |
+| **Phase 9** | API Perimeter Gateway & Filters | `api-gateway` (Port 8080) | ✅ **Complete** |
+| **Phase 10** | Distributed Communication & Discovery | OpenFeign, ErrorDecoders, Eureka | ✅ **Complete** |
+| **Phase 11** | Security & Reliability Hardening | `docs/security.md`, Header Sanitization | ✅ **Complete** |
+| **Phase 12** | Complete Testing & Validation | `docs/testing.md`, 117 Reactor Tests | ✅ **Complete** |
+| **Phase 13** | Deployment & Technical Documentation | `docker-compose.yml`, `docs/deployment.md`, `docs/api.md` | ✅ **Complete** |
+
+---
+
+## 🎯 Problem Statement
+
+Traditional auction platforms suffer from critical architectural vulnerabilities under high concurrency:
+1. **Lost Updates & Race Conditions**: Simultaneous bids placed in the closing seconds ("bid sniping") cause dirty writes, invalid winning prices, or multiple contradictory winners.
+2. **Monolithic Scalability Bottlenecks**: High-frequency read queries (e.g. refreshing current highest bids) overload transactional databases and degrade payment workflows.
+3. **Security & Identity Spoofing**: Insecure systems trust client-supplied user IDs or expose payment histories to unauthorized third parties.
+4. **Non-Deterministic Clearance**: Unpredictable tie-breaking leads to unfair winner determination when identical bids arrive concurrently.
+
+**PS025** solves these challenges using a decentralized, event-ready microservices architecture combining per-auction in-memory fair mutex locks, programmatic transaction boundaries, deterministic price-time tie-breaking, schema-isolated MySQL persistence, and perimeter JWT token verification.
+
+---
+
+## ✨ Core Features
+
+- **Decentralized Microservices**: 6 autonomous services running on distinct ports with zero shared database tables.
+- **Dynamic Service Discovery**: Netflix Eureka registry with client-side load balancing and health checks.
+- **Secure Perimeter API Gateway**: Spring Cloud Gateway enforcing JWT validation, header sanitization, context injection, global audit logging, and CORS.
+- **Multi-Tier Hybrid Concurrency**: Sub-millisecond `ConcurrentHashMap<Long, ReentrantLock>` fair mutex locking combined with Spring `@Transactional` boundaries and JPA `@Version` optimistic locking.
+- **Deterministic Price-Time Clearance**: Strict mathematical ordering: highest amount first; earliest accepted timestamp breaks ties; surrogate ID breaks sub-millisecond ties.
+- **Automated Lifecycle Scheduler**: Background scheduled daemon sweeps expired auctions every 30 seconds and triggers clearance.
+- **Idempotent Payment & Escrow**: Pluggable `PaymentProcessor` interface, wallet ledger, 5% automated platform commission calculation, and duplicate-safe retries.
+- **Least Privilege Database Ownership**: Dedicated MySQL users (`auth_user`, `auction_user`, `bidding_user`, `payment_user`) restricted to their respective schemas.
+- **Production-Ready Docker Containerization**: Multi-container Docker Compose setup with health dependency orchestration.
 
 ---
 
@@ -49,261 +95,157 @@ A production-grade, high-concurrency distributed microservices platform for real
 
 ---
 
-## 🚀 Microservices Catalog
+## 🛠️ Technology Stack
 
-| Microservice | Port | Database Schema | Key Responsibilities |
+| Category | Technology |
+|---|---|
+| **Language & Platform** | Java 17 LTS (Tested up to JDK 25) |
+| **Microservices Framework** | Spring Boot 3.3.5 |
+| **Cloud & Routing** | Spring Cloud 2023.0.3, Spring Cloud Gateway |
+| **Service Discovery** | Spring Cloud Netflix Eureka |
+| **Inter-Service Communication** | Spring Cloud OpenFeign, Resilience Decoders |
+| **Security & Auth** | Spring Security 6, JJWT 0.12.6 (HMAC-SHA256), BCrypt |
+| **Persistence & ORM** | Spring Data JPA, Hibernate 6.5, HikariCP |
+| **Database** | MySQL 8.0 (Schema-per-Service isolation) / H2 In-Memory (Testing) |
+| **Testing & Mocking** | JUnit 5, Mockito, Spring Boot Test, MockMvc |
+| **Containerization** | Docker, Docker Compose, Eclipse Temurin 17 Alpine JRE |
+
+---
+
+## 🚀 Microservices Catalog & Ports
+
+| Microservice | Port | Schema | Dedicated User | Responsibilities |
+|---|---|---|---|---|
+| **Eureka Server** | `8761` | N/A | N/A | Service discovery registry, peer awareness, and liveness monitoring. |
+| **API Gateway** | `8080` | N/A | N/A | Perimeter routing, JWT authentication, header sanitization, CORS, audit logging. |
+| **Auth Service** | `8081` | `auth_db` | `auth_user` | User registration, dual-identifier login, BCrypt hashing, JWT issuance. |
+| **Auction Service** | `8082` | `auction_db` | `auction_user` | Auction catalog, reserve pricing, lifecycle states, clearance trigger. |
+| **Bidding Service** | `8083` | `bidding_db` | `bidding_user` | Real-time concurrent bidding, mutex serialization, deterministic clearance. |
+| **Payment Service** | `8084` | `payment_db` | `payment_user` | Winner payments, pluggable payment processor, idempotent wallet settlements. |
+
+---
+
+## 📡 REST API Reference Summary
+
+All client calls route through the API Gateway at `http://localhost:8080`.
+
+| Method | Endpoint | Access | Description |
 |---|---|---|---|
-| **Eureka Server** | `8761` | N/A | Central dynamic service registry, peer awareness, and heartbeat liveness monitoring. |
-| **API Gateway** | `8080` | N/A | Reverse proxy, perimeter JWT authentication filter, context header propagation (`X-User-Id`, `X-User-Email`, `X-User-Role`), global audit logging (`GlobalLoggingFilter`), and CORS. |
-| **Auth Service** | `8081` | `auth_db` | User registration, dual-identifier login (email/username), BCrypt password hashing, JWT creation & token validation, role-based access control (BUYER, SELLER, ADMIN). |
-| **Auction Service** | `8082` | `auction_db` | Auction creation, reserve price, lifecycle state transitions (ACTIVE, CLOSED, CANCELLED), deterministic winner finalization, automated clearance scheduler, and Feign inter-service settlement trigger. |
-| **Bidding Service** | `8083` | `bidding_db` | Real-time high concurrency bid placement, per-auction hybrid locking, minimum increment checks, sub-threshold rejection, and deterministic clearance calculation. |
-| **Payment Service** | `8084` | `payment_db` | Winner payment processing (`POST /api/payments`), pluggable `PaymentProcessor` & `MockPaymentProcessor`, idempotent settlement ledger, platform fee calculation (5%), and wallet transactions. |
+| `POST` | `/api/auth/register` | Public | Register new buyer, seller, or admin user. |
+| `POST` | `/api/auth/login` | Public | Authenticate with username/email and receive JWT. |
+| `POST` | `/api/auth/validate` | Authenticated | Validate JWT signature, expiration, and claims. |
+| `POST` | `/api/auctions` | Seller, Admin | Create a new scheduled auction with reserve price. |
+| `GET` | `/api/auctions` | Public | Query auctions with optional status and category filters. |
+| `GET` | `/api/auctions/{id}` | Public | Retrieve detailed auction record. |
+| `POST` | `/api/auctions/{id}/start` | Seller, Admin | Transition auction status from `SCHEDULED` to `ACTIVE`. |
+| `POST` | `/api/auctions/{id}/clear` | Internal, Seller | Trigger clearance calculation and initiate settlement. |
+| `POST` | `/api/bids` | Buyer, Admin | Place a new bid (identity extracted from JWT). |
+| `GET` | `/api/bids/auction/{auctionId}` | Public | Retrieve all accepted bids for an auction. |
+| `GET` | `/api/bids/auction/{auctionId}/highest` | Public | Query current highest bid. |
+| `POST` | `/api/payments` | Winner | Process winner payment for an auction. |
+| `GET` | `/api/payments/{id}` | Winner, Seller, Admin | Retrieve payment record by ID. |
+| `POST` | `/api/v1/payments/wallet/deposit` | Authenticated | Deposit funds into authenticated user's wallet. |
+| `GET` | `/api/v1/payments/wallet` | Authenticated | Retrieve authenticated user's wallet balance. |
+
+*For complete API schemas, curl examples, and response bodies, see [docs/api.md](docs/api.md).*
 
 ---
 
-## 💡 Key Architectural & Technical Highlights
+## 🔒 Security Architecture
 
-### 1. Multi-Tier Hybrid Concurrency Control
-To eliminate race conditions and dirty overwrites under high-frequency simultaneous bidding:
-- **Per-Auction Fair In-Memory Lock**: `ConcurrentHashMap<Long, ReentrantLock>` configured with fair scheduling (`new ReentrantLock(true)`).
-- **Programmatic Transactional Enclosure**: `TransactionTemplate` executes strictly *inside* the locked critical section (`lock.lock() -> transactionTemplate.execute(...) -> lock.unlock()`), ensuring uncommitted state is never exposed to concurrent threads.
-- **Database Optimistic Locking**: JPA `@Version` column prevents lost updates across distributed replicas.
+1. **Perimeter Authentication**: The API Gateway intercepts requests to secured endpoints, validates the HMAC-SHA256 signature and expiration of the JWT token, strips any client-supplied `X-User-*` headers, and injects validated claims (`X-User-Id`, `X-User-Email`, `X-User-Role`).
+2. **Defense-in-Depth Validation**: Downstream services independently validate JWT tokens when the `Authorization` header is present.
+3. **Auction Ownership**: Sellers can only modify, start, or cancel auctions they own (`auction.sellerId == userId`), unless they possess `ROLE_ADMIN`.
+4. **Anti-Spoofing Bidding**: The bidding payload (`PlaceBidRequest`) strictly omits `bidderId`; the identity is extracted from the cryptographic JWT claims. Sellers cannot bid on their own auctions.
+5. **Payment & Wallet Privacy**: Payment records and wallet balances are restricted strictly to the winner, seller, or platform admin.
+6. **Password Governance**: Passwords are encrypted with `BCryptPasswordEncoder`. Zero plaintext passwords or JWT tokens are stored or logged.
 
-### 2. Strict Deterministic Winner Selection & Clearance
-- **Primary Rank**: Highest bid amount (`amount DESC`).
-- **Tie-Breaker**: Earliest accepted timestamp (`acceptedAt ASC`).
-- **Secondary Tie-Breaker**: Deterministic lowest primary key (`id ASC`).
-- **Reserve Price Rule**: If `winningBid < reservePrice`, the auction terminates with status `CLOSED` and `winnerId = null` (no winner, zero fund transfers).
-
-### 3. Pluggable Payment Processor & Idempotency
-- **Decoupled Design**: Abstract `PaymentProcessor` interface implemented by `MockPaymentProcessor`, ready to be swapped with Stripe, PayPal, or Razorpay without touching business logic.
-- **Idempotent Transactions**: All payment operations check existing completed transactions by `auctionId` before executing charges, preventing duplicate deductions.
-- **PCI-DSS Compliance / Sensitive Data Masking**: Raw card details and CVVs are never logged or stored; only masked references (`**** 4242`) and cryptographically random transaction IDs (`PAY-...`) are retained.
-
-### 4. Defense-in-Depth Security
-- **Perimeter Gateway Authentication**: `AuthenticationFilter` validates JWT signatures, extracts claims, and mutates downstream request headers with `X-User-Id`, `X-User-Email`, and `X-User-Role`.
-- **Downstream Independent Verification**: Microservices independently re-verify JWT tokens from the `Authorization: Bearer <token>` header to prevent lateral privilege escalation if gateway perimeter checks are bypassed.
-
-### 5. Robust OpenFeign Inter-Service Communication
-- **Eureka-Based Dynamic Lookup**: All Feign clients resolve target services dynamically via service names (`auction-service`, `bidding-service`, `payment-service`) with zero hardcoded IPs.
-- **Custom Feign Error Decoders**: `CustomFeignErrorDecoder` instances in `auction-service`, `bidding-service`, and `payment-service` intercept downstream HTTP errors and translate them into domain exceptions (`ResourceNotFoundException`, `InvalidBidException`, `ServiceUnavailableException`).
-- **Resilience Timeouts**: Connect and read timeouts configured to 5000ms across all participating clients.
-
-### 6. Database-per-Service Pattern
-- Total schema isolation: `auth_db`, `auction_db`, `bidding_db`, and `payment_db`.
-- No cross-database joins or shared tables.
-- Cross-boundary state is exchanged strictly via typed DTOs over REST and OpenFeign.
+*For the complete Authorization Matrix and security review, see [docs/security.md](docs/security.md).*
 
 ---
 
-## 📡 Complete REST API Reference
+## ⚡ Concurrency & Clearance Strategy
 
-All requests pass through the **API Gateway** on port `8080` (or directly via individual service ports for internal/testing access).
-
-### Auth Service (`/api/auth` or `/api/v1/auth`)
-
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `POST` | `/api/auth/register` | Public | Register a new user (SELLER, BUYER, ADMIN) |
-| `POST` | `/api/auth/login` | Public | Authenticate with email/username + password and obtain JWT token |
-| `GET` | `/api/auth/validate` | Bearer Token | Validate JWT token authenticity and expiration |
-| `GET` | `/api/users/profile` | Bearer Token | Retrieve authenticated user profile |
-
-### Auction Service (`/api/auctions` or `/api/v1/auctions`)
-
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `POST` | `/api/auctions` | Seller / Admin | Create a new auction listing |
-| `GET` | `/api/auctions` | Public | List all auctions (optional filter by `status`, `category`) |
-| `GET` | `/api/auctions/{id}` | Public | Retrieve detailed auction metadata |
-| `GET` | `/api/auctions/seller/{sellerId}` | Public | Retrieve all auctions listed by a specific seller |
-| `PUT` | `/api/auctions/{id}` | Seller / Admin | Update draft auction parameters |
-| `DELETE` | `/api/auctions/{id}` | Seller / Admin | Delete draft auction |
-| `POST` | `/api/auctions/{id}/start` | Seller / Admin | Transition auction to `ACTIVE` state |
-| `POST` | `/api/auctions/{id}/close` | Seller / Admin | Close auction and determine winning bidder |
-| `POST` | `/api/auctions/{id}/cancel` | Seller / Admin | Cancel auction |
-| `PUT` | `/api/auctions/{id}/highest-bid` | Internal / Feign | Update highest bid and current price |
-| `POST` | `/api/auctions/{id}/clear` | Internal / Feign | Execute deterministic clearance and trigger settlement |
-
-### Bidding Service (`/api/bids` or `/api/v1/bids`)
-
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `POST` | `/api/bids` | Buyer Token | Place a real-time bid on an active auction |
-| `GET` | `/api/bids/{id}` | Bearer Token | Retrieve individual bid record |
-| `GET` | `/api/auctions/{auctionId}/bids` | Public | Retrieve all bids for an auction |
-| `GET` | `/api/auctions/{auctionId}/highest` | Public | Retrieve current highest accepted bid |
-| `GET` | `/api/v1/bids/auction/{auctionId}/clearance` | Internal / Feign | Compute deterministic clearance result |
-
-### Payment Service (`/api/payments` or `/api/v1/payments`)
-
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `POST` | `/api/payments` | Winner Token | Process winning bidder payment via pluggable processor |
-| `GET` | `/api/payments/{id}` | Bearer Token | Retrieve payment status and transaction reference |
-| `GET` | `/api/payments/auction/{auctionId}` | Bearer Token | Retrieve payment details for a specific auction |
-| `POST` | `/api/v1/payments/wallet/deposit` | Bearer Token | Deposit funds into sandbox wallet |
-| `GET` | `/api/v1/payments/wallet` | Bearer Token | Retrieve current user wallet balance |
-| `POST` | `/api/v1/payments/settle` | Internal / Feign | Settle auction escrow payout to seller (5% platform fee) |
-| `GET` | `/api/v1/payments/transactions/{txId}` | Bearer Token | Retrieve settlement ledger transaction |
+1. **In-Memory Fair Mutex Locking**: Each auction is guarded by a dedicated `ReentrantLock(true)` stored in a `ConcurrentHashMap<Long, ReentrantLock>`. Bids for auction $A$ do not block bids for auction $B$.
+2. **Transaction Enclosure**: The database transaction begins *after* acquiring the lock and commits *before* releasing the lock:
+   $$\text{lock.lock()} \longrightarrow \text{TransactionTemplate.execute(...)} \longrightarrow \text{lock.unlock()}$$
+3. **Deterministic Tie-Breaking (Price-Time Priority)**:
+   - **Primary**: Highest bid amount (`amount DESC`)
+   - **Secondary**: Earliest accepted timestamp (`acceptedAt ASC`)
+   - **Tertiary**: Lowest primary key (`id ASC`)
+4. **Post-Close Defense**: The instant an auction transitions to `CLOSED`, subsequent bids are rejected with `AuctionNotActiveException`.
+5. **Payment Idempotency**: Payment settlements check existing transactions under lock before processing charges.
 
 ---
 
-## 🧪 Comprehensive Verification & Test Suite
+## 🧪 Testing Suite & Validation
 
-The entire multi-module reactor executes cleanly with **131 tests passing, 0 failures, and 0 errors**:
+The comprehensive test suite contains **117 automated tests** spanning unit, security, concurrency, and end-to-end integration workflows:
 
-| Module | Test Classes | Tests Run | Result |
-|---|---|:---:|:---:|
-| **eureka-server** | `EurekaServerApplicationTests`, `EurekaServiceRegistrationTest` | 4 | **100% PASSED** |
-| **api-gateway** | `ApiGatewayApplicationTests`, `AuthenticationFilterTest`, `GlobalLoggingFilterTest`, `GatewayRoutingTest` | 8 | **100% PASSED** |
-| **auth-service** | `AuthServiceApplicationTests`, `AuthControllerTest`, `JwtSecurityTest`, `AuthServiceImplTest` | 34 | **100% PASSED** |
-| **auction-service** | `AuctionServiceApplicationTests`, `AuctionControllerTest`, `AuctionServiceImplTest`, `AuctionConcurrencyTest`, `AuctionFeignErrorDecoderTest`, `AuctionInterServiceCommunicationTest` | 38 | **100% PASSED** |
-| **bidding-service** | `BiddingServiceApplicationTests`, `BiddingControllerTest`, `BiddingServiceImplTest`, `BiddingConcurrencyTest`, `BiddingFeignErrorDecoderTest` | 25 | **100% PASSED** |
-| **payment-service** | `PaymentServiceApplicationTests`, `PaymentControllerTest`, `PaymentServiceImplTest`, `PaymentWinnerTest`, `PaymentFeignErrorDecoderTest` | 22 | **100% PASSED** |
-| **Total Reactor** | **All 7 Modules** | **131** | **100% SUCCESS** |
-
----
-
-## 🛠️ Build and Execution Instructions
-
-### Prerequisites
-- **Java 17+** (Compatible through Java 25)
-- **Maven 3.9+**
-- **Docker & Docker Compose** (Optional, for containerized multi-service deployment)
-- **MySQL 8.0+** (When running outside Docker)
-
-### 1. Build and Run All Unit & Integration Tests
 ```bash
+# Run the complete test suite across all 7 modules
 mvn clean test
 ```
 
-### 2. Package All Microservices
+### Test Results Breakdown:
+- **Unit Tests**: Registration, login, auction creation, state machine, valid/invalid bids, fee calculation.
+- **Security Tests**: Missing JWT, expired JWT, tampered tokens, unauthorized auction edits, header spoofing.
+- **Concurrency Tests**: 2 simultaneous bids, 10 simultaneous bids, **50+ simultaneous bids**, identical bid amounts, simultaneous bid + close race condition, and concurrent duplicate payments.
+- **End-to-End Integration**: Complete lifecycle flow (`Create -> Start -> Bid 1 -> Bid 2 -> Close -> Clearance -> Settle Payment -> Reject Post-Close Bids`).
+
+| Module | Tests Run | Failures | Errors | Skipped | Status |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Eureka Server** | 1 | 0 | 0 | 0 | `SUCCESS` |
+| **API Gateway** | 6 | 0 | 0 | 0 | `SUCCESS` |
+| **Auth Service** | 24 | 0 | 0 | 0 | `SUCCESS` |
+| **Auction Service** | 23 | 0 | 0 | 0 | `SUCCESS` |
+| **Bidding Service** | 31 | 0 | 0 | 0 | `SUCCESS` |
+| **Payment Service** | 32 | 0 | 0 | 0 | `SUCCESS` |
+| **TOTAL** | **117** | **0** | **0** | **0** | **`BUILD SUCCESS`** |
+
+*For complete test execution metrics, see [docs/testing.md](docs/testing.md).*
+
+---
+
+## 🐳 Docker Deployment Guide
+
+### 1. Build Executable JARs
 ```bash
 mvn clean package -DskipTests
 ```
 
-### 3. Recommended Local Startup Order
-1. **Eureka Server**:
-   ```bash
-   cd eureka-server && mvn spring-boot:run
-   ```
-2. **Auth Service**:
-   ```bash
-   cd auth-service && mvn spring-boot:run
-   ```
-3. **Auction Service**:
-   ```bash
-   cd auction-service && mvn spring-boot:run
-   ```
-4. **Bidding Service**:
-   ```bash
-   cd bidding-service && mvn spring-boot:run
-   ```
-5. **Payment Service**:
-   ```bash
-   cd payment-service && mvn spring-boot:run
-   ```
-6. **API Gateway**:
-   ```bash
-   cd api-gateway && mvn spring-boot:run
-   ```
+### 2. Configure Environment
+```bash
+cp .env.example .env
+```
 
-Verify Eureka dashboard at: [http://localhost:8761](http://localhost:8761)
-
----
-
-## 🐳 Docker Deployment
-
-Start the complete cluster (MySQL + Eureka + Gateway + 4 Microservices) in a single command:
-
+### 3. Launch with Docker Compose
 ```bash
 docker compose up --build -d
 ```
 
-### Monitor Container Status:
-```bash
-docker compose ps
-```
+### 4. Verify Service Health
+- **Eureka Dashboard**: [http://localhost:8761](http://localhost:8761)
+- **API Gateway**: `curl http://localhost:8080/actuator/health`
+- **Auth Service**: `curl http://localhost:8081/actuator/health`
+- **Auction Service**: `curl http://localhost:8082/actuator/health`
+- **Bidding Service**: `curl http://localhost:8083/actuator/health`
+- **Payment Service**: `curl http://localhost:8084/actuator/health`
 
-### Stop All Services:
+### 5. Stop the Cluster
 ```bash
 docker compose down
 ```
 
+*For complete deployment instructions, see [docs/deployment.md](docs/deployment.md).*
+
 ---
 
-## 📡 End-to-End API Workflow Example (cURL)
+## 📚 Technical Documentation Index
 
-All requests pass through the **API Gateway** on port `8080`.
-
-### 1. Register Seller & Buyer
-```bash
-# Register Seller
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"seller_alice","email":"alice@auction.com","password":"Password123!","role":"SELLER"}'
-
-# Register Buyer
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"buyer_bob","email":"bob@auction.com","password":"Password123!","role":"BUYER"}'
-```
-
-### 2. Login to Obtain JWT Token
-```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"bob@auction.com","password":"Password123!"}'
-```
-
-### 3. Create and Activate Auction (As Seller)
-```bash
-curl -X POST http://localhost:8080/api/auctions \
-  -H "Authorization: Bearer <SELLER_JWT>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "MacBook Pro M3 Max",
-    "description": "Mint condition 64GB RAM 1TB SSD",
-    "category": "Electronics",
-    "startingPrice": 1000.00,
-    "reservePrice": 1500.00,
-    "minimumIncrement": 50.00,
-    "startTime": "2026-09-20T00:00:00",
-    "endTime": "2026-09-30T00:00:00"
-  }'
-
-curl -X POST http://localhost:8080/api/auctions/1/start \
-  -H "Authorization: Bearer <SELLER_JWT>"
-```
-
-### 4. Place Bid (As Buyer)
-```bash
-curl -X POST http://localhost:8080/api/bids \
-  -H "Authorization: Bearer <BUYER_JWT>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "auctionId": 1,
-    "amount": 1600.00
-  }'
-```
-
-### 5. Close Auction & Settle Payment
-```bash
-# Seller closes auction
-curl -X POST http://localhost:8080/api/auctions/1/close \
-  -H "Authorization: Bearer <SELLER_JWT>"
-
-# Winning buyer pays
-curl -X POST http://localhost:8080/api/payments \
-  -H "Authorization: Bearer <BUYER_JWT>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "auctionId": 1,
-    "winnerId": 2,
-    "amount": 1600.00,
-    "paymentMethod": "CREDIT_CARD",
-    "maskedCardNumber": "**** **** **** 4242"
-  }'
-```
+- **[System Requirements Specification](docs/requirements.md)**: Problem analysis, actors, use cases, non-functional requirements.
+- **[Distributed Architecture Specification](docs/architecture.md)**: Domain models, sequence diagrams, concurrency architecture, container topology.
+- **[REST API Reference](docs/api.md)**: Complete endpoint catalog, request/response bodies, error codes, curl examples.
+- **[Security & RBAC Architecture](docs/security.md)**: Authorization matrix, JWT policy, password governance, defense-in-depth model.
+- **[Testing & Validation Report](docs/testing.md)**: Test execution matrix, concurrency benchmarks, verification guarantees.
+- **[Deployment & Operations Manual](docs/deployment.md)**: Containerization guide, Docker Compose, environment variables, healthchecks.
