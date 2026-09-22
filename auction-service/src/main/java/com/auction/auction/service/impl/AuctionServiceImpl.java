@@ -466,7 +466,7 @@ public class AuctionServiceImpl implements AuctionService {
         if ("ROLE_ADMIN".equalsIgnoreCase(userRole) || "ADMIN".equalsIgnoreCase(userRole)) {
             return;
         }
-        if (userId != null && !auction.getSellerId().equals(userId)) {
+        if (userId == null || !auction.getSellerId().equals(userId)) {
             throw new UnauthorizedActionException("You are not authorized to modify this auction");
         }
     }

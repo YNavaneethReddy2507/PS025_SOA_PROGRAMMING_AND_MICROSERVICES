@@ -149,27 +149,24 @@ public class AuctionController {
     }
 
     private Long extractUserId(Long headerUserId, String authHeader) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            if (!jwtUtil.validateToken(token)) {
+                throw new UnauthorizedActionException("Invalid or expired authentication token");
+            }
+            Claims claims = jwtUtil.extractAllClaims(token);
+            Object userIdClaim = claims.get("userId");
+            if (userIdClaim != null) {
+                return Long.valueOf(userIdClaim.toString());
+            }
+        }
         if (headerUserId != null) {
             return headerUserId;
         }
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            if (jwtUtil.validateToken(token)) {
-                Claims claims = jwtUtil.extractAllClaims(token);
-                Object userIdClaim = claims.get("userId");
-                if (userIdClaim != null) {
-                    return Long.valueOf(userIdClaim.toString());
-                }
-            }
-        }
-        // Fallback default for testing or raise unauthorized
         throw new UnauthorizedActionException("Authentication token or user identity is missing or invalid");
     }
 
     private String extractUserRole(String headerRole, String authHeader) {
-        if (headerRole != null) {
-            return headerRole;
-        }
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
             if (jwtUtil.validateToken(token)) {
@@ -179,6 +176,9 @@ public class AuctionController {
                     return roleClaim.toString();
                 }
             }
+        }
+        if (headerRole != null) {
+            return headerRole;
         }
         return "ROLE_USER";
     }

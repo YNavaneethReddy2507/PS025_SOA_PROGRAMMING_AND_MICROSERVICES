@@ -7,10 +7,7 @@ import com.auction.payment.entity.PaymentStatus;
 import com.auction.payment.entity.PaymentTransaction;
 import com.auction.payment.entity.TransactionType;
 import com.auction.payment.entity.Wallet;
-import com.auction.payment.exception.InsufficientBalanceException;
-import com.auction.payment.exception.InvalidPaymentException;
-import com.auction.payment.exception.ResourceNotFoundException;
-import com.auction.payment.exception.UnauthorizedException;
+import com.auction.payment.exception.*;
 import com.auction.payment.processor.PaymentProcessingRequest;
 import com.auction.payment.processor.PaymentProcessingResult;
 import com.auction.payment.processor.PaymentProcessor;
@@ -356,6 +353,15 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional(readOnly = true)
+    public PaymentResponse getPaymentById(Long id, Long callerUserId, String callerRole) {
+        Payment payment = paymentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found with ID: " + id));
+        verifyPaymentAccess(payment, callerUserId, callerRole);
+        return mapToPaymentResponse(payment, "Payment retrieved successfully");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PaymentResponse getPaymentByAuctionId(Long auctionId) {
         Optional<Payment> successPayment = paymentRepository.findByAuctionIdAndStatus(auctionId, PaymentStatus.SUCCESS);
         if (successPayment.isPresent()) {
@@ -365,6 +371,52 @@ public class PaymentServiceImpl implements PaymentService {
         Payment payment = paymentRepository.findByAuctionId(auctionId)
                 .orElseThrow(() -> new ResourceNotFoundException("No payment found for auction: " + auctionId));
         return mapToPaymentResponse(payment, "Payment record");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PaymentResponse getPaymentByAuctionId(Long auctionId, Long callerUserId, String callerRole) {
+        Payment payment = paymentRepository.findByAuctionIdAndStatus(auctionId, PaymentStatus.SUCCESS)
+                .or(() -> paymentRepository.findByAuctionId(auctionId))
+                .orElseThrow(() -> new ResourceNotFoundException("No payment found for auction: " + auctionId));
+        verifyPaymentAccess(payment, callerUserId, callerRole);
+        return mapToPaymentResponse(payment, "Payment record");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public WalletResponse getWalletByUserId(Long userId, Long callerUserId, String callerRole) {
+        if (!isAdmin(callerRole) && (callerUserId == null || !callerUserId.equals(userId))) {
+            throw new AccessDeniedException("You are not authorized to view another user's wallet");
+        }
+        return getWalletByUserId(userId);
+    }
+
+    private void verifyPaymentAccess(Payment payment, Long callerUserId, String callerRole) {
+        if (isAdmin(callerRole)) {
+            return;
+        }
+        if (callerUserId == null) {
+            throw new UnauthorizedException("Authentication required to view payment information");
+        }
+        if (!callerUserId.equals(payment.getWinnerId())) {
+            if (auctionClient != null) {
+                try {
+                    AuctionDto auction = auctionClient.getAuctionById(payment.getAuctionId());
+                    if (auction != null && callerUserId.equals(auction.getSellerId())) {
+                        return;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            log.warn("Access denied: User {} is not authorized to view payment {} (winner is {})",
+                    callerUserId, payment.getId(), payment.getWinnerId());
+            throw new AccessDeniedException("You are not authorized to view this payment information");
+        }
+    }
+
+    private boolean isAdmin(String role) {
+        return role != null && ("ROLE_ADMIN".equalsIgnoreCase(role) || "ADMIN".equalsIgnoreCase(role));
     }
 
     private PaymentResponse mapToPaymentResponse(Payment p, String message) {

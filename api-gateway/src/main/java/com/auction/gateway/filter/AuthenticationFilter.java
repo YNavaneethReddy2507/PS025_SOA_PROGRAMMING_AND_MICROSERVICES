@@ -32,6 +32,14 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
 
+            // Sanitize untrusted client headers to prevent header spoofing
+            ServerHttpRequest.Builder sanitizedBuilder = request.mutate()
+                    .headers(httpHeaders -> {
+                        httpHeaders.remove("X-User-Id");
+                        httpHeaders.remove("X-User-Email");
+                        httpHeaders.remove("X-User-Role");
+                    });
+
             if (validator.isSecured.test(request)) {
                 if (!request.getHeaders().containsKey(HttpHeaders.AUTHORIZATION)) {
                     log.warn("Missing Authorization Header for request: {}", request.getURI().getPath());
@@ -56,8 +64,8 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
                     String email = claims.getSubject();
                     String role = String.valueOf(claims.get("role"));
 
-                    // Forward extracted user credentials to downstream services
-                    ServerHttpRequest mutatedRequest = request.mutate()
+                    // Forward validated user credentials to downstream services
+                    ServerHttpRequest mutatedRequest = sanitizedBuilder
                             .header("X-User-Id", userId)
                             .header("X-User-Email", email)
                             .header("X-User-Role", role)
@@ -69,7 +77,7 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
                     return onError(exchange, "Unauthorized access", HttpStatus.UNAUTHORIZED);
                 }
             }
-            return chain.filter(exchange);
+            return chain.filter(exchange.mutate().request(sanitizedBuilder.build()).build());
         };
     }
 

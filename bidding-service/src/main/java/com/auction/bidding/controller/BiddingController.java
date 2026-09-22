@@ -66,18 +66,19 @@ public class BiddingController {
     }
 
     private Long extractBidderId(Long headerUserId, String authHeader) {
-        if (headerUserId != null) {
-            return headerUserId;
-        }
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
-            if (jwtUtil.validateToken(token)) {
-                Claims claims = jwtUtil.extractAllClaims(token);
-                Object userIdClaim = claims.get("userId");
-                if (userIdClaim != null) {
-                    return Long.valueOf(userIdClaim.toString());
-                }
+            if (!jwtUtil.validateToken(token)) {
+                throw new UnauthorizedException("Invalid or expired authentication token");
             }
+            Claims claims = jwtUtil.extractAllClaims(token);
+            Object userIdClaim = claims.get("userId");
+            if (userIdClaim != null) {
+                return Long.valueOf(userIdClaim.toString());
+            }
+        }
+        if (headerUserId != null) {
+            return headerUserId;
         }
         throw new UnauthorizedException("Authentication token or bidder identity is missing or invalid");
     }

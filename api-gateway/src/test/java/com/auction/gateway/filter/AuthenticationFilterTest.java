@@ -136,4 +136,47 @@ class AuthenticationFilterTest {
         // Ensure original Authorization header is preserved for defense-in-depth downstream validation
         assertEquals("Bearer " + token, forwardedHeaders.getFirst(HttpHeaders.AUTHORIZATION));
     }
+
+    @Test
+    @DisplayName("Client spoofed X-User headers are stripped on open and secured endpoints")
+    void testClientSpoofedHeadersAreStripped() {
+        // Test open endpoint with spoofed header
+        MockServerHttpRequest openRequest = MockServerHttpRequest.post("/api/auth/login")
+                .header("X-User-Id", "999")
+                .header("X-User-Role", "ROLE_ADMIN")
+                .build();
+        ServerWebExchange openExchange = MockServerWebExchange.from(openRequest);
+
+        AtomicReference<ServerWebExchange> capturedExchange = new AtomicReference<>();
+        GatewayFilterChain chain = ex -> {
+            capturedExchange.set(ex);
+            return Mono.empty();
+        };
+
+        authenticationFilter.apply(new AuthenticationFilter.Config()).filter(openExchange, chain).block();
+
+        assertNotNull(capturedExchange.get());
+        assertNull(capturedExchange.get().getRequest().getHeaders().getFirst("X-User-Id"),
+                "Client-supplied X-User-Id must be stripped");
+        assertNull(capturedExchange.get().getRequest().getHeaders().getFirst("X-User-Role"),
+                "Client-supplied X-User-Role must be stripped");
+
+        // Test secured endpoint with spoofed header overwritten by token claim
+        String token = generateValidToken(42L, "bidder@example.com", "ROLE_BIDDER");
+        MockServerHttpRequest securedRequest = MockServerHttpRequest.post("/api/bids")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .header("X-User-Id", "999")
+                .header("X-User-Role", "ROLE_ADMIN")
+                .build();
+        ServerWebExchange securedExchange = MockServerWebExchange.from(securedRequest);
+
+        capturedExchange.set(null);
+        authenticationFilter.apply(new AuthenticationFilter.Config()).filter(securedExchange, chain).block();
+
+        assertNotNull(capturedExchange.get());
+        assertEquals("42", capturedExchange.get().getRequest().getHeaders().getFirst("X-User-Id"),
+                "Spoofed X-User-Id must be overwritten with authenticated token claim");
+        assertEquals("ROLE_BIDDER", capturedExchange.get().getRequest().getHeaders().getFirst("X-User-Role"),
+                "Spoofed X-User-Role must be overwritten with authenticated token claim");
+    }
 }
