@@ -21,6 +21,7 @@ logs/
 .project
 .settings/
 .metadata/
+.factorypath
 
 # OS files
 .DS_Store
